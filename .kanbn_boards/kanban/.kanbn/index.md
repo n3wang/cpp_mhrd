@@ -13,7 +13,8 @@ completedColumns:
 
 ## Todo
 
-- [base-ui-improvements](tasks/base-ui-improvements.md)
+- [base-ux-improvements](tasks/base-ux-improvements.md)
+- [better-ide](tasks/better-ide.md)
 
 ## In Progress
 

@@ -5,12 +5,19 @@
 #include <sys/ioctl.h>
 #include <cstring>
 #include <cstdio>
+#include <fcntl.h>
+#include <cerrno>
 
 static struct termios originalTermios;
 static bool initialized = false;
 
 void TerminalUI::init() {
     if (initialized) return;
+    
+    // Check if stdin is a terminal
+    if (!isatty(STDIN_FILENO)) {
+        return; // Not a terminal, skip initialization
+    }
     
     tcgetattr(STDIN_FILENO, &originalTermios);
     struct termios newTermios = originalTermios;
@@ -20,6 +27,7 @@ void TerminalUI::init() {
     tcsetattr(STDIN_FILENO, TCSANOW, &newTermios);
     
     std::cout << "\033[?1049h"; // Enable alternate screen buffer
+    std::cout.flush();
     initialized = true;
 }
 
@@ -27,7 +35,10 @@ void TerminalUI::cleanup() {
     if (!initialized) return;
     
     std::cout << "\033[?1049l"; // Disable alternate screen buffer
-    tcsetattr(STDIN_FILENO, TCSANOW, &originalTermios);
+    std::cout.flush();
+    if (isatty(STDIN_FILENO)) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &originalTermios);
+    }
     showCursor();
     resetColor();
     initialized = false;
@@ -35,6 +46,7 @@ void TerminalUI::cleanup() {
 
 void TerminalUI::clearScreen() {
     std::cout << "\033[2J\033[H";
+    std::cout.flush();
 }
 
 void TerminalUI::moveCursor(int row, int col) {
@@ -58,8 +70,13 @@ void TerminalUI::restoreCursor() {
 }
 
 KeyEvent TerminalUI::readKey() {
+    // Make sure stdin is non-blocking for error checking
     char c;
-    if (read(STDIN_FILENO, &c, 1) != 1) {
+    ssize_t result = read(STDIN_FILENO, &c, 1);
+    if (result != 1) {
+        if (result < 0 && errno == EAGAIN) {
+            return {Key::None, 0};
+        }
         return {Key::None, 0};
     }
     
@@ -205,6 +222,7 @@ void Menu::render() {
     
     std::cout << "\n  [0] Exit\n";
     std::cout << "\nUse arrow keys or numbers to select, Enter to confirm\n";
+    std::cout.flush(); // Ensure output is displayed
 }
 
 int Menu::show() {
@@ -315,6 +333,7 @@ void TabbedInterface::render() {
     TerminalUI::moveCursor(height - 1, 1);
     TerminalUI::clearLine();
     std::cout << "Tab/Shift+Tab: Switch tabs | Shift+Enter: Compile | Enter: Newline | Esc: Back to menu";
+    std::cout.flush();
     
     updateCursor();
 }
@@ -324,17 +343,19 @@ void TabbedInterface::renderTabs() {
     
     for (int i = 0; i < 4; ++i) {
         if (i == static_cast<int>(activeTab_)) {
-            TerminalUI::setColor(30, 47); // Black on white
+            TerminalUI::setColor(30, 47); // Black on white (inverted)
+            std::cout << "▶ [" << tabNames[i] << "]";
         } else {
             TerminalUI::setColor(37, -1); // White
+            std::cout << "  [" << tabNames[i] << "]";
         }
-        std::cout << "[" << tabNames[i] << "]";
         TerminalUI::resetColor();
         if (i < 3) std::cout << " ";
     }
     std::cout << "\n";
     TerminalUI::setColor(37, -1);
-    for (int i = 0; i < 80; ++i) std::cout << "─";
+    int width = TerminalUI::getWidth();
+    for (int i = 0; i < width && i < 80; ++i) std::cout << "─";
     TerminalUI::resetColor();
     std::cout << "\n";
 }
@@ -368,30 +389,48 @@ void TabbedInterface::renderSolution() {
         TerminalUI::resetColor();
     } else {
         std::cout << display;
-        if (display.back() != '\n') std::cout << "\n";
+        if (display.empty() || display.back() != '\n') std::cout << "\n";
     }
+    std::cout.flush();
 }
 
 void TabbedInterface::renderInstructions() {
     std::cout << instructionsText_;
+    std::cout.flush();
 }
 
 void TabbedInterface::renderStats() {
     std::cout << statsText_;
+    std::cout.flush();
 }
 
 void TabbedInterface::renderHistory() {
     std::cout << historyText_;
+    std::cout.flush();
 }
 
 void TabbedInterface::updateCursor() {
     if (activeTab_ == Solution) {
         // Calculate cursor position in solution text
-        int row = 1; // Start after tabs
+        // Count lines before cursor position
+        int lines = 3; // Start after tabs (2 lines) + 1 for 1-based
         int col = 1;
-        // Simple calculation - would need more sophisticated logic for multi-line
-        TerminalUI::moveCursor(row + cursorRow_, col + cursorCol_);
+        int pos = 0;
+        for (int i = 0; i < cursorCol_ && i < static_cast<int>(solutionText_.length()); ++i) {
+            if (solutionText_[i] == '\n') {
+                lines++;
+                col = 1;
+                pos = i + 1;
+            } else {
+                col++;
+            }
+        }
+        // Calculate column position on current line
+        col = cursorCol_ - pos + 1;
+        if (col < 1) col = 1;
+        TerminalUI::moveCursor(lines, col);
         TerminalUI::showCursor();
+        std::cout.flush();
     } else {
         TerminalUI::hideCursor();
     }
@@ -433,6 +472,47 @@ bool TabbedInterface::handleKey(KeyEvent key, std::string& solutionText) {
                 render();
             }
             return true;
+        } else if (key.key == Key::Up) {
+            // Move cursor up one line
+            int lineStart = cursorCol_;
+            while (lineStart > 0 && solutionText[lineStart - 1] != '\n') {
+                lineStart--;
+            }
+            if (lineStart > 0) {
+                // Move to previous line
+                int prevLineStart = lineStart - 1;
+                while (prevLineStart > 0 && solutionText[prevLineStart - 1] != '\n') {
+                    prevLineStart--;
+                }
+                int offset = cursorCol_ - lineStart;
+                cursorCol_ = prevLineStart + offset;
+                if (cursorCol_ > lineStart - 1) cursorCol_ = lineStart - 1;
+            }
+            updateCursor();
+            return true;
+        } else if (key.key == Key::Down) {
+            // Move cursor down one line
+            int lineStart = cursorCol_;
+            while (lineStart > 0 && solutionText[lineStart - 1] != '\n') {
+                lineStart--;
+            }
+            int lineEnd = cursorCol_;
+            while (lineEnd < static_cast<int>(solutionText.length()) && solutionText[lineEnd] != '\n') {
+                lineEnd++;
+            }
+            if (lineEnd < static_cast<int>(solutionText.length())) {
+                // Move to next line
+                int nextLineStart = lineEnd + 1;
+                int nextLineEnd = nextLineStart;
+                while (nextLineEnd < static_cast<int>(solutionText.length()) && solutionText[nextLineEnd] != '\n') {
+                    nextLineEnd++;
+                }
+                int offset = cursorCol_ - lineStart;
+                cursorCol_ = nextLineStart + offset;
+                if (cursorCol_ > nextLineEnd) cursorCol_ = nextLineEnd;
+            }
+            updateCursor();
+            return true;
         } else if (key.key == Key::Left) {
             if (cursorCol_ > 0) cursorCol_--;
             updateCursor();
@@ -445,7 +525,6 @@ bool TabbedInterface::handleKey(KeyEvent key, std::string& solutionText) {
             // Regular Enter - insert newline
             solutionText.insert(solutionText.begin() + cursorCol_, '\n');
             cursorCol_++;
-            cursorRow_++;
             render();
             return true;
         } else if (key.key == Key::ShiftEnter) {

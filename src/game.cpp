@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <set>
+#include <iomanip>
 
 namespace fs = std::filesystem;
 
@@ -234,15 +235,51 @@ bool Game::isCompleted(const std::string& levelId) const {
 
 void Game::loadProgress(const std::string& progressFile) {
     completed_.clear();
+    savedSolutions_.clear();
     if (!fs::exists(progressFile)) return;
     
     std::string content = readFile(progressFile);
-    std::regex idRe("\"([^\"]+)\"");
-    std::sregex_iterator iter(content.begin(), content.end(), idRe);
-    std::sregex_iterator end;
     
-    for (; iter != end; ++iter) {
-        completed_.insert((*iter)[1]);
+    // Load completed levels
+    std::regex completedRe("\"completed\"\\s*:\\s*\\[([^\\]]+)\\]");
+    std::smatch m;
+    if (std::regex_search(content, m, completedRe)) {
+        std::string completedStr = m[1];
+        std::regex idRe("\"([^\"]+)\"");
+        std::sregex_iterator iter(completedStr.begin(), completedStr.end(), idRe);
+        std::sregex_iterator end;
+        for (; iter != end; ++iter) {
+            completed_.insert((*iter)[1]);
+        }
+    }
+    
+    // Load solutions
+    std::regex solutionsRe("\"solutions\"\\s*:\\s*\\{([^}]+(?:\\{[^}]*\\}[^}]*)*)\\}");
+    if (std::regex_search(content, m, solutionsRe)) {
+        std::string solutionsStr = m[1];
+        // Parse each solution: "levelId": "solution text"
+        std::regex solutionRe("\"([^\"]+)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\[\\\\\"nrt]|\\\\u[0-9a-fA-F]{4})*)\"");
+        std::sregex_iterator solIter(solutionsStr.begin(), solutionsStr.end(), solutionRe);
+        std::sregex_iterator solEnd;
+        for (; solIter != solEnd; ++solIter) {
+            std::string levelId = (*solIter)[1];
+            std::string solution = (*solIter)[2];
+            // Unescape JSON string
+            std::string unescaped;
+            for (size_t i = 0; i < solution.length(); ++i) {
+                if (solution[i] == '\\' && i + 1 < solution.length()) {
+                    if (solution[i+1] == 'n') { unescaped += '\n'; i++; }
+                    else if (solution[i+1] == 'r') { unescaped += '\r'; i++; }
+                    else if (solution[i+1] == 't') { unescaped += '\t'; i++; }
+                    else if (solution[i+1] == '"') { unescaped += '"'; i++; }
+                    else if (solution[i+1] == '\\') { unescaped += '\\'; i++; }
+                    else unescaped += solution[i];
+                } else {
+                    unescaped += solution[i];
+                }
+            }
+            savedSolutions_[levelId] = unescaped;
+        }
     }
 }
 
@@ -257,6 +294,42 @@ void Game::saveProgress(const std::string& progressFile) const {
         first = false;
         f << "    \"" << id << "\"";
     }
-    f << "\n  ]\n}\n";
+    f << "\n  ],\n  \"solutions\": {\n";
+    
+    first = true;
+    for (const auto& [levelId, solution] : savedSolutions_) {
+        if (!first) f << ",\n";
+        first = false;
+        f << "    \"" << levelId << "\": ";
+        // Escape JSON string
+        f << "\"";
+        for (char c : solution) {
+            if (c == '"') f << "\\\"";
+            else if (c == '\\') f << "\\\\";
+            else if (c == '\n') f << "\\n";
+            else if (c == '\r') f << "\\r";
+            else if (c == '\t') f << "\\t";
+            else if (c >= 32 && c < 127) f << c;
+            else f << "\\u" << std::hex << std::setw(4) << std::setfill('0') << (int)c << std::dec;
+        }
+        f << "\"";
+    }
+    f << "\n  }\n}\n";
+}
+
+void Game::saveSolution(const std::string& levelId, const std::string& solution) {
+    if (!solution.empty()) {
+        savedSolutions_[levelId] = solution;
+    } else {
+        savedSolutions_.erase(levelId);
+    }
+}
+
+std::string Game::loadSolution(const std::string& levelId) const {
+    auto it = savedSolutions_.find(levelId);
+    if (it != savedSolutions_.end()) {
+        return it->second;
+    }
+    return "";
 }
 

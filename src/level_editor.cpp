@@ -4,9 +4,12 @@
 #include <iomanip>
 #include <set>
 #include <algorithm>
+#include <filesystem>
 
 LevelEditor::LevelEditor(Game& game, const Level& level) 
     : game_(game), level_(level), historyIndex_(-1) {
+    // Load saved solution if available
+    solutionText_ = game_.loadSolution(level_.id);
     updateInstructions();
     updateStats();
     tabs_.setSolutionText(solutionText_);
@@ -217,11 +220,15 @@ bool LevelEditor::run() {
         KeyEvent key = TerminalUI::readKey();
         
         if (key.key == Key::Escape) {
+            // Auto-save solution before exiting
+            game_.saveSolution(level_.id, solutionText_);
             TerminalUI::cleanup();
             return false;
         }
         
         if (key.key == Key::Tab || key.key == Key::ShiftTab) {
+            // Auto-save solution when switching tabs
+            game_.saveSolution(level_.id, solutionText_);
             handleTabNavigation(key);
             continue;
         }
@@ -241,12 +248,15 @@ bool LevelEditor::run() {
                 tabs_.setSolutionText(solutionText_);
                 tabs_.render();
             } else if (key.key == Key::Escape) {
-                // Go back to menu
+                // Auto-save solution before going back to menu
+                game_.saveSolution(level_.id, solutionText_);
                 break;
             }
         } else {
             // In other tabs, only allow tab navigation and escape
             if (key.key == Key::Escape) {
+                // Auto-save solution before going back to menu
+                game_.saveSolution(level_.id, solutionText_);
                 break;
             }
         }

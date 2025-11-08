@@ -27,10 +27,13 @@ public:
     bool isCompleted(const std::string& levelId) const;
     void loadProgress(const std::string& progressFile);
     void saveProgress(const std::string& progressFile) const;
+    void saveSolution(const std::string& levelId, const std::string& solution);
+    std::string loadSolution(const std::string& levelId) const;
     
 private:
     std::vector<Level> levels_;
     std::unordered_set<std::string> completed_;
+    std::unordered_map<std::string, std::string> savedSolutions_; // levelId -> solution
     bool parseLevelJson(const std::string& jsonContent, Level& level);
     std::string readFile(const std::string& path);
 };
