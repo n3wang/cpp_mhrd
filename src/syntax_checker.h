@@ -7,6 +7,7 @@ struct SyntaxError {
     std::string message;
     int line;
     int column;
+    std::string lineContent; // The actual line content with the error
     bool hasError;
 };
 

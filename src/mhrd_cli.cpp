@@ -83,6 +83,9 @@ static void interactiveMode() {
     TerminalUI::init();
     
     while (true) {
+        // Clear screen before showing menu (in case we're returning from level editor)
+        TerminalUI::clearScreen();
+        
         Menu menu("╔══════════════════════════════════════════════════════════╗\n"
                   "║              MHRD CLI - Level Selector                   ║\n"
                   "╚══════════════════════════════════════════════════════════╝");
@@ -112,6 +115,8 @@ static void interactiveMode() {
         if (choice >= 0 && choice < static_cast<int>(levels.size())) {
             playLevel(game, levels[choice]);
             game.saveProgress(progressFile);
+            // Ensure terminal is still in raw mode after returning from level editor
+            TerminalUI::init();
         }
     }
 }

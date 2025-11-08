@@ -20,6 +20,13 @@ enum class Key {
     Delete,
     Home,
     End,
+    F5,
+    AltUp,
+    AltDown,
+    CtrlLeft,
+    CtrlRight,
+    CtrlBackspace,
+    CtrlDelete,
     Char
 };
 
@@ -71,6 +78,26 @@ private:
     int highlightFg_, highlightBg_;
     int selectedFg_, selectedBg_;
     void render();
+};
+
+class Table {
+public:
+    Table();
+    void addHeader(const std::vector<std::string>& headers);
+    void addRow(const std::vector<std::string>& cells);
+    void setColumnAlignment(int col, int align); // -1 left, 0 center, 1 right
+    void setMaxWidth(int width);
+    void setMaxHeight(int height);
+    std::string render() const;
+    
+private:
+    std::vector<std::string> headers_;
+    std::vector<std::vector<std::string>> rows_;
+    std::vector<int> columnAlignments_; // -1 left, 0 center, 1 right
+    int maxWidth_;
+    int maxHeight_;
+    void calculateColumnWidths(std::vector<int>& widths) const;
+    std::string formatCell(const std::string& content, int width, int align) const;
 };
 
 class TabbedInterface {

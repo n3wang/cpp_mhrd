@@ -7,28 +7,32 @@
 #include <cstdio>
 #include <fcntl.h>
 #include <cerrno>
+#include <iomanip>
+#include <sstream>
 
 static struct termios originalTermios;
 static bool initialized = false;
 
 void TerminalUI::init() {
-    if (initialized) return;
-    
     // Check if stdin is a terminal
     if (!isatty(STDIN_FILENO)) {
         return; // Not a terminal, skip initialization
     }
     
-    tcgetattr(STDIN_FILENO, &originalTermios);
+    // Save original terminal settings if not already saved
+    if (!initialized) {
+        tcgetattr(STDIN_FILENO, &originalTermios);
+        std::cout << "\033[?1049h"; // Enable alternate screen buffer
+        std::cout.flush();
+        initialized = true;
+    }
+    
+    // Always ensure raw mode is set (idempotent)
     struct termios newTermios = originalTermios;
     newTermios.c_lflag &= ~(ICANON | ECHO);
     newTermios.c_cc[VMIN] = 1;
     newTermios.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &newTermios);
-    
-    std::cout << "\033[?1049h"; // Enable alternate screen buffer
-    std::cout.flush();
-    initialized = true;
 }
 
 void TerminalUI::cleanup() {
@@ -82,19 +86,57 @@ KeyEvent TerminalUI::readKey() {
     
     // Check for escape sequences
     if (c == '\033') {
-        char seq[3];
-        if (read(STDIN_FILENO, &seq[0], 1) != 1) return {Key::Escape, 0};
-        if (read(STDIN_FILENO, &seq[1], 1) != 1) return {Key::Escape, 0};
+        char seq[2];
+        ssize_t r1 = read(STDIN_FILENO, &seq[0], 1);
+        if (r1 != 1) return {Key::Escape, 0};
         
         if (seq[0] == '[') {
+            ssize_t r2 = read(STDIN_FILENO, &seq[1], 1);
+            if (r2 != 1) return {Key::Escape, 0};
+            
             if (seq[1] >= '0' && seq[1] <= '9') {
                 char extra;
-                if (read(STDIN_FILENO, &extra, 1) == 1 && extra == '~') {
-                    if (seq[1] == '3') return {Key::Delete, 0};
+                ssize_t r3 = read(STDIN_FILENO, &extra, 1);
+                if (r3 != 1) return {Key::None, 0};
+                
+                // Handle modifier sequences: [1;mA where m is modifier
+                // 2 = Shift, 3 = Alt, 4 = Shift+Alt, 5 = Ctrl, 6 = Shift+Ctrl
+                if (seq[1] == '1' && extra == ';') {
+                    char modifier;
+                    ssize_t r4 = read(STDIN_FILENO, &modifier, 1);
+                    if (r4 != 1) return {Key::None, 0};
+                    
+                    char key;
+                    ssize_t r5 = read(STDIN_FILENO, &key, 1);
+                    if (r5 != 1) return {Key::None, 0};
+                    
+                    if (modifier == '3') { // Alt
+                        if (key == 'A') return {Key::AltUp, 0};
+                        if (key == 'B') return {Key::AltDown, 0};
+                    } else if (modifier == '5') { // Ctrl
+                        if (key == 'C') return {Key::CtrlRight, 0};
+                        if (key == 'D') return {Key::CtrlLeft, 0};
+                    }
+                    return {Key::None, 0};
+                }
+                
+                // Handle F5: [15~ (multi-digit function key)
+                if (seq[1] == '1' && extra == '5') {
+                    char tilde;
+                    if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~') {
+                        return {Key::F5, 0};
+                    }
+                    return {Key::None, 0};
+                }
+                
+                // Handle single-digit function keys and special keys
+                if (extra == '~') {
                     if (seq[1] == '1') return {Key::Home, 0};
+                    if (seq[1] == '3') return {Key::Delete, 0};
                     if (seq[1] == '4') return {Key::End, 0};
                 }
-                // Check for Shift+Enter: [13;2~ or similar
+                
+                // Check for Shift+Enter: [13;2~ or similar (some terminals)
                 if (seq[1] == '1' && extra == '3') {
                     char more;
                     if (read(STDIN_FILENO, &more, 1) == 1 && more == ';') {
@@ -124,15 +166,31 @@ KeyEvent TerminalUI::readKey() {
     }
     
     if (c == '\n' || c == '\r') {
-        // Check if Shift is held (simplified - terminal may send different sequence)
-        // For now, we'll use a timeout-based approach or check terminal capabilities
-        // Most terminals send \n for Enter, but Shift+Enter might be detected differently
-        // We'll handle this in the application layer by checking modifier state
         return {Key::Enter, 0};
     }
     
-    if (c == 127 || c == '\b') return {Key::Backspace, 0};
+    // Check for Ctrl+Backspace (typically \b or 127 with Ctrl)
+    // Ctrl+Backspace often sends \b (8) or 127
+    // We'll detect Ctrl+Backspace by checking if it's 127 or \b
+    // Note: This is terminal-dependent, some send different sequences
+    if (c == 127 || c == '\b') {
+        // Check if there's a modifier - for now, treat as regular backspace
+        // Ctrl+Backspace detection would need more complex handling
+        return {Key::Backspace, 0};
+    }
+    
+    // Check for Ctrl+Delete (typically sends DEL with Ctrl modifier)
+    // This is complex and terminal-dependent
+    
+    // Check for Ctrl+key combinations (Ctrl+A = 1, Ctrl+B = 2, etc.)
+    // Ctrl+Backspace might be sent as \b or 127
+    // Ctrl+Delete might be sent as a special sequence
+    
     if (c >= 32 && c <= 126) return {Key::Char, c};
+    
+    // Handle Ctrl+Backspace and Ctrl+Delete via special characters
+    // Ctrl+H = Backspace (8), but we already handle that
+    // For Ctrl+Delete, we'd need to detect it differently
     
     return {Key::None, 0};
 }
@@ -164,6 +222,165 @@ void TerminalUI::clearLine() {
 
 void TerminalUI::clearToEndOfLine() {
     std::cout << "\033[0K";
+}
+
+// Table implementation
+Table::Table() : maxWidth_(80), maxHeight_(24) {
+}
+
+void Table::addHeader(const std::vector<std::string>& headers) {
+    headers_ = headers;
+    columnAlignments_.resize(headers.size(), -1); // Default left align
+}
+
+void Table::addRow(const std::vector<std::string>& cells) {
+    rows_.push_back(cells);
+}
+
+void Table::setColumnAlignment(int col, int align) {
+    if (col >= 0 && col < static_cast<int>(columnAlignments_.size())) {
+        columnAlignments_[col] = align;
+    }
+}
+
+void Table::setMaxWidth(int width) {
+    maxWidth_ = width;
+}
+
+void Table::setMaxHeight(int height) {
+    maxHeight_ = height;
+}
+
+void Table::calculateColumnWidths(std::vector<int>& widths) const {
+    if (headers_.empty()) return;
+    
+    widths.resize(headers_.size(), 0);
+    
+    // Find max width for each column (content only, no padding yet)
+    for (size_t i = 0; i < headers_.size(); ++i) {
+        widths[i] = static_cast<int>(headers_[i].length());
+    }
+    
+    for (const auto& row : rows_) {
+        for (size_t i = 0; i < row.size() && i < widths.size(); ++i) {
+            widths[i] = std::max(widths[i], static_cast<int>(row[i].length()));
+        }
+    }
+    
+    // Ensure minimum width of 3
+    for (auto& w : widths) {
+        w = std::max(3, w);
+    }
+}
+
+std::string Table::formatCell(const std::string& content, int width, int align) const {
+    std::string result;
+    int contentLen = static_cast<int>(content.length());
+    int cellWidth = width; // Total cell width including padding
+    
+    // Truncate if too long
+    std::string displayContent = content;
+    if (contentLen > cellWidth - 2) {
+        displayContent = content.substr(0, cellWidth - 5) + "...";
+        contentLen = static_cast<int>(displayContent.length());
+    }
+    
+    if (align == 1) { // Right align
+        int padding = cellWidth - contentLen - 2; // -2 for spaces on both sides
+        for (int i = 0; i < padding; ++i) result += " ";
+        result += " " + displayContent + " ";
+    } else if (align == 0) { // Center
+        int totalPadding = cellWidth - contentLen - 2;
+        int leftPad = totalPadding / 2;
+        int rightPad = totalPadding - leftPad;
+        result += " ";
+        for (int i = 0; i < leftPad; ++i) result += " ";
+        result += displayContent;
+        for (int i = 0; i < rightPad; ++i) result += " ";
+        result += " ";
+    } else { // Left align
+        result += " " + displayContent;
+        int padding = cellWidth - contentLen - 2;
+        for (int i = 0; i < padding; ++i) result += " ";
+        result += " ";
+    }
+    
+    return result;
+}
+
+std::string Table::render() const {
+    if (headers_.empty()) return "";
+    
+    std::ostringstream oss;
+    std::vector<int> widths;
+    calculateColumnWidths(widths);
+    
+    // Calculate total width (borders + separators + column widths)
+    int totalWidth = 1; // Left border
+    for (int w : widths) {
+        totalWidth += w + 1; // +1 for separator
+    }
+    
+    // Adjust if too wide
+    if (totalWidth > maxWidth_ && !widths.empty()) {
+        int excess = totalWidth - maxWidth_;
+        int perColumn = excess / static_cast<int>(widths.size());
+        for (auto& w : widths) {
+            w = std::max(3, w - perColumn);
+        }
+    }
+    
+    // Top border
+    oss << "┌";
+    for (size_t i = 0; i < widths.size(); ++i) {
+        for (int j = 0; j < widths[i]; ++j) oss << "─";
+        if (i < widths.size() - 1) oss << "┬";
+    }
+    oss << "┐\n";
+    
+    // Header row
+    oss << "│";
+    for (size_t i = 0; i < headers_.size() && i < widths.size(); ++i) {
+        int align = (i < columnAlignments_.size()) ? columnAlignments_[i] : -1;
+        oss << formatCell(headers_[i], widths[i], align);
+        oss << "│";
+    }
+    oss << "\n";
+    
+    // Header separator
+    oss << "├";
+    for (size_t i = 0; i < widths.size(); ++i) {
+        for (int j = 0; j < widths[i]; ++j) oss << "─";
+        if (i < widths.size() - 1) oss << "┼";
+    }
+    oss << "┤\n";
+    
+    // Data rows
+    for (const auto& row : rows_) {
+        oss << "│";
+        for (size_t i = 0; i < row.size() && i < widths.size(); ++i) {
+            int align = (i < columnAlignments_.size()) ? columnAlignments_[i] : -1;
+            oss << formatCell(row[i], widths[i], align);
+            oss << "│";
+        }
+        // Fill missing columns if row is shorter than headers
+        for (size_t i = row.size(); i < widths.size(); ++i) {
+            int align = (i < columnAlignments_.size()) ? columnAlignments_[i] : -1;
+            oss << formatCell("", widths[i], align);
+            oss << "│";
+        }
+        oss << "\n";
+    }
+    
+    // Bottom border
+    oss << "└";
+    for (size_t i = 0; i < widths.size(); ++i) {
+        for (int j = 0; j < widths[i]; ++j) oss << "─";
+        if (i < widths.size() - 1) oss << "┴";
+    }
+    oss << "┘\n";
+    
+    return oss.str();
 }
 
 // Menu implementation
@@ -312,27 +529,90 @@ void TabbedInterface::clearSuccess() {
 
 void TabbedInterface::render() {
     TerminalUI::clearScreen();
+    int height = TerminalUI::getHeight();
+    
+    // Render tabs (2 lines)
     renderTabs();
+    
+    // Calculate available space
+    int errorLines = 0;
+    if (!error_.empty()) {
+        for (char c : error_) {
+            if (c == '\n') errorLines++;
+        }
+        errorLines++; // Count last line
+    }
+    
+    // Reserve space: tabs (2 lines) + error area (if any) + status bar (1 line)
+    int maxErrorDisplayLines = 0;
+    if (!error_.empty() || !success_.empty()) {
+        maxErrorDisplayLines = std::min(errorLines + 1, height - 5); // Reserve space for errors
+    }
+    int statusBarRow = height - 1;
+    int errorStartRow = statusBarRow - maxErrorDisplayLines;
+    int contentEndRow = errorStartRow - 1;
+    
+    // Render content (will naturally flow from row 3)
+    // Content rendering functions will output text, we just need to make sure
+    // we don't overwrite it with error messages
     renderContent();
     
-    // Show status messages
-    int height = TerminalUI::getHeight();
-    TerminalUI::moveCursor(height - 2, 1);
-    TerminalUI::clearLine();
+    // Clear and render error/success area at the bottom
+    for (int i = 0; i < maxErrorDisplayLines; ++i) {
+        TerminalUI::moveCursor(errorStartRow + i, 1);
+        TerminalUI::clearLine();
+    }
     
     if (!error_.empty()) {
         TerminalUI::setColor(31, -1); // Red
-        std::cout << "Error: " << error_;
+        std::istringstream errorStream(error_);
+        std::string line;
+        int currentLine = 0;
+        bool isTableContent = false;
+        
+        while (std::getline(errorStream, line) && currentLine < maxErrorDisplayLines) {
+            TerminalUI::moveCursor(errorStartRow + currentLine, 1);
+            
+            // Check if this is table content (contains box-drawing characters or table-related text)
+            bool isTableLine = (line.find("┌") != std::string::npos || line.find("│") != std::string::npos || 
+                               line.find("├") != std::string::npos || line.find("└") != std::string::npos ||
+                               line.find("┴") != std::string::npos || line.find("┬") != std::string::npos ||
+                               line.find("┼") != std::string::npos || line.find("─") != std::string::npos);
+            
+            bool isTableHeader = (line.find("Test Results Comparison:") != std::string::npos);
+            bool isSummary = (line.find("Summary:") != std::string::npos);
+            
+            if (isTableLine || isTableHeader || isSummary) {
+                isTableContent = true;
+                // Table content - no prefix, no indentation
+                std::cout << line;
+            } else if (currentLine == 0 && !isTableContent) {
+                // First line of non-table error - add "Error: " prefix
+                std::cout << "Error: " << line;
+            } else if (!isTableContent) {
+                // Regular error continuation line - indent
+                std::cout << "       " << line;
+            } else {
+                // After table content, regular text
+                std::cout << line;
+            }
+            currentLine++;
+        }
         TerminalUI::resetColor();
     } else if (!success_.empty()) {
+        TerminalUI::moveCursor(errorStartRow, 1);
         TerminalUI::setColor(32, -1); // Green
         std::cout << "Success: " << success_;
         TerminalUI::resetColor();
     }
     
-    TerminalUI::moveCursor(height - 1, 1);
+    // Status bar at bottom
+    TerminalUI::moveCursor(statusBarRow, 1);
     TerminalUI::clearLine();
-    std::cout << "Tab/Shift+Tab: Switch tabs | Shift+Enter: Compile | Enter: Newline | Esc: Back to menu";
+    std::cout << "Tab/Shift+Tab: Switch tabs | F5: Compile | Enter: Newline | Esc: Back to menu";
+    if (activeTab_ == TabbedInterface::Solution) {
+        std::cout << " | Template provided";
+    }
     std::cout.flush();
     
     updateCursor();
@@ -361,9 +641,8 @@ void TabbedInterface::renderTabs() {
 }
 
 void TabbedInterface::renderContent() {
-    int height = TerminalUI::getHeight();
-    int contentHeight = height - 5; // Account for tabs, status, etc.
-    
+    // Content rendering doesn't need height calculation here
+    // The individual render functions handle their own display
     switch (activeTab_) {
         case Solution:
             renderSolution();
@@ -381,15 +660,29 @@ void TabbedInterface::renderContent() {
 }
 
 void TabbedInterface::renderSolution() {
-    // Simple text editor view
-    std::string display = solutionText_;
-    if (display.empty()) {
+    // Text editor view with line numbers
+    if (solutionText_.empty()) {
         TerminalUI::setColor(37, -1);
-        std::cout << "(Enter your HDL solution here)\n";
+        std::cout << "   1 | (Enter your HDL solution here)\n";
         TerminalUI::resetColor();
     } else {
-        std::cout << display;
-        if (display.empty() || display.back() != '\n') std::cout << "\n";
+        std::istringstream iss(solutionText_);
+        std::string line;
+        int lineNum = 1;
+        while (std::getline(iss, line)) {
+            // Print line number with padding
+            TerminalUI::setColor(90, -1); // Dark gray for line numbers
+            std::cout << std::setw(4) << std::right << lineNum << " | ";
+            TerminalUI::resetColor();
+            std::cout << line << "\n";
+            lineNum++;
+        }
+        // Handle case where text doesn't end with newline
+        if (!solutionText_.empty() && solutionText_.back() != '\n') {
+            TerminalUI::setColor(90, -1);
+            std::cout << std::setw(4) << std::right << lineNum << " | ";
+            TerminalUI::resetColor();
+        }
     }
     std::cout.flush();
 }
@@ -411,22 +704,27 @@ void TabbedInterface::renderHistory() {
 
 void TabbedInterface::updateCursor() {
     if (activeTab_ == Solution) {
-        // Calculate cursor position in solution text
+        // Calculate cursor position in solution text with line numbers
         // Count lines before cursor position
         int lines = 3; // Start after tabs (2 lines) + 1 for 1-based
         int col = 1;
         int pos = 0;
+        int currentLineNum = 1;
         for (int i = 0; i < cursorCol_ && i < static_cast<int>(solutionText_.length()); ++i) {
             if (solutionText_[i] == '\n') {
                 lines++;
                 col = 1;
                 pos = i + 1;
+                currentLineNum++;
             } else {
                 col++;
             }
         }
         // Calculate column position on current line
-        col = cursorCol_ - pos + 1;
+        // Add offset for line number display: "   1 | " = 7 characters
+        // Line numbers can be 1-4 digits, so we need to account for that
+        int lineNumWidth = (currentLineNum < 10) ? 4 : (currentLineNum < 100) ? 5 : (currentLineNum < 1000) ? 6 : 7;
+        col = cursorCol_ - pos + 1 + lineNumWidth + 3; // +3 for " | "
         if (col < 1) col = 1;
         TerminalUI::moveCursor(lines, col);
         TerminalUI::showCursor();
@@ -527,8 +825,8 @@ bool TabbedInterface::handleKey(KeyEvent key, std::string& solutionText) {
             cursorCol_++;
             render();
             return true;
-        } else if (key.key == Key::ShiftEnter) {
-            // Shift+Enter - don't handle here, let level editor handle it
+        } else if (key.key == Key::ShiftEnter || key.key == Key::F5) {
+            // Shift+Enter or F5 - don't handle here, let level editor handle it
             return false; // Signal to parent to handle
         }
     }

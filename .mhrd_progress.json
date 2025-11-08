@@ -1,5 +1,10 @@
 {
   "completed": [
     "level01"
-  ]
+  ],
+  "solutions": {
+    "level01": "Inputs: in;\nOutputs: out;\nParts: inv:not;\nWires: in->inv.in, inv.out->;\n\n",
+    "level03": "Inputs: a, b;\nOutputs: out;\nParts: g1:and, g2:or, g3:not;\nWires: a->g1.in1, b->g1.in2, g1.out->out;\n\n// TODO: Complete the circuit to match the expected truth table\n// Available gates: and, or, not\n",
+    "level02": "Inputs: a, b;\nOutputs: out;\nParts: g1:and;\nWires: a->g1.in1, b->g1.in2, g1.out->out;\n\n// TODO: Complete the circuit to match the expected truth table\n// Available gates: and\n"
+  }
 }

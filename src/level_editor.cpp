@@ -1,5 +1,6 @@
 #include "level_editor.h"
 #include "simulator.h"
+#include "terminal_ui.h"
 #include <sstream>
 #include <iomanip>
 #include <set>
@@ -8,8 +9,11 @@
 
 LevelEditor::LevelEditor(Game& game, const Level& level) 
     : game_(game), level_(level), historyIndex_(-1) {
-    // Load saved solution if available
+    // Load saved solution if available, otherwise use template
     solutionText_ = game_.loadSolution(level_.id);
+    if (solutionText_.empty()) {
+        solutionText_ = generateTemplate();
+    }
     updateInstructions();
     updateStats();
     tabs_.setSolutionText(solutionText_);
@@ -69,6 +73,10 @@ void LevelEditor::updateInstructions() {
         }
         oss << "}\n";
     }
+    
+    oss << "\n";
+    oss << "💡 Template: A starter template with the correct structure is provided\n";
+    oss << "   in the Solution tab. Modify it to complete the circuit.\n";
     
     tabs_.setInstructionsText(oss.str());
 }
@@ -133,6 +141,102 @@ std::string LevelEditor::getLastWorkedCode() const {
     return history_.back();
 }
 
+std::string LevelEditor::generateTemplate() const {
+    std::ostringstream oss;
+    
+    // Inputs section
+    oss << "Inputs: ";
+    for (size_t i = 0; i < level_.inputs.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << level_.inputs[i];
+    }
+    oss << ";\n";
+    
+    // Outputs section
+    oss << "Outputs: ";
+    for (size_t i = 0; i < level_.outputs.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << level_.outputs[i];
+    }
+    oss << ";\n";
+    
+    // Parts section - provide example parts based on available gates
+    oss << "Parts: ";
+    if (!level_.available_gates.empty()) {
+        // Create example parts for each available gate type
+        std::vector<std::string> partNames;
+        for (size_t i = 0; i < level_.available_gates.size() && i < 3; ++i) {
+            std::string gateName = level_.available_gates[i];
+            std::string partName = "g" + std::to_string(i + 1);
+            partNames.push_back(partName + ":" + gateName);
+        }
+        for (size_t i = 0; i < partNames.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << partNames[i];
+        }
+    }
+    oss << ";\n";
+    
+    // Wires section - provide example wiring
+    oss << "Wires: ";
+    if (!level_.available_gates.empty() && !level_.inputs.empty() && !level_.outputs.empty()) {
+        // Wire first input to first gate
+        std::string firstGate = "g1";
+        std::string firstInput = level_.inputs[0];
+        
+        // Determine gate input pin name based on gate type
+        std::string gateType = level_.available_gates[0];
+        std::string inPin = "in1";
+        if (gateType == "not") {
+            inPin = "in";
+        }
+        
+        oss << firstInput << "->" << firstGate << "." << inPin;
+        
+        // If there are multiple inputs and gates, wire second input to second gate or first gate's second input
+        if (level_.inputs.size() > 1 && level_.available_gates.size() > 0) {
+            if (gateType != "not" && level_.inputs.size() > 1) {
+                oss << ", " << level_.inputs[1] << "->" << firstGate << ".in2";
+            } else if (level_.available_gates.size() > 1) {
+                std::string secondGate = "g2";
+                std::string secondInPin = "in1";
+                if (level_.available_gates[1] == "not") {
+                    secondInPin = "in";
+                }
+                oss << ", " << level_.inputs[1] << "->" << secondGate << "." << secondInPin;
+            }
+        }
+        
+        // Wire gate output to first output
+        oss << ", " << firstGate << ".out->" << level_.outputs[0];
+        
+        // If there are multiple outputs, wire additional gates
+        if (level_.outputs.size() > 1 && level_.available_gates.size() > 1) {
+            oss << ", g2.out->" << level_.outputs[1];
+        }
+    }
+    oss << ";\n";
+    
+    // Add helpful comments
+    oss << "\n// TODO: Complete the circuit to match the expected truth table\n";
+    oss << "// Available gates: ";
+    for (size_t i = 0; i < level_.available_gates.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << level_.available_gates[i];
+    }
+    oss << "\n";
+    
+    return oss.str();
+}
+
+void LevelEditor::resetToTemplate() {
+    solutionText_ = generateTemplate();
+    tabs_.setSolutionText(solutionText_);
+    tabs_.clearError();
+    tabs_.clearSuccess();
+    tabs_.render();
+}
+
 void LevelEditor::compileAndTest() {
     tabs_.clearError();
     tabs_.clearSuccess();
@@ -140,7 +244,19 @@ void LevelEditor::compileAndTest() {
     // Check syntax first
     SyntaxError syntaxError = checkSyntax(solutionText_);
     if (syntaxError.hasError) {
-        tabs_.setError("Syntax Error (Line " + std::to_string(syntaxError.line) + "): " + syntaxError.message);
+        std::string errorMsg = "Syntax Error at Line " + std::to_string(syntaxError.line) + ": " + syntaxError.message;
+        if (!syntaxError.lineContent.empty()) {
+            // Trim the line content for display
+            std::string trimmedLine = syntaxError.lineContent;
+            while (!trimmedLine.empty() && (trimmedLine[0] == ' ' || trimmedLine[0] == '\t')) {
+                trimmedLine = trimmedLine.substr(1);
+            }
+            if (trimmedLine.length() > 60) {
+                trimmedLine = trimmedLine.substr(0, 57) + "...";
+            }
+            errorMsg += "\n  Line " + std::to_string(syntaxError.line) + ": " + trimmedLine;
+        }
+        tabs_.setError(errorMsg);
         tabs_.render();
         return;
     }
@@ -190,7 +306,83 @@ void LevelEditor::compileAndTest() {
             }
         }
         
-        tabs_.setError("Solution does not match expected truth table");
+        // Build comparison table
+        std::ostringstream tableMsg;
+        tableMsg << "Test Results Comparison:\n\n";
+        
+        Table table;
+        table.setMaxWidth(TerminalUI::getWidth() - 4);
+        
+        // Build header
+        std::vector<std::string> headers = {"#", "Status"};
+        for (const auto& in : level_.inputs) headers.push_back("in." + in);
+        for (const auto& out : level_.outputs) {
+            headers.push_back("out." + out + " (exp)");
+            headers.push_back("out." + out + " (got)");
+        }
+        table.addHeader(headers);
+        
+        // Set column alignments: # and numeric columns right-aligned, Status center
+        table.setColumnAlignment(0, 1); // # right-aligned
+        table.setColumnAlignment(1, 0); // Status center-aligned
+        // Input and output columns right-aligned (numeric)
+        for (size_t i = 2; i < headers.size(); ++i) {
+            table.setColumnAlignment(static_cast<int>(i), 1); // Right-align numeric columns
+        }
+        
+        // Add test case rows
+        int testNum = 1;
+        int passed = 0;
+        int failed = 0;
+        
+        for (const auto& testCase : level_.expected) {
+            const auto& inVec = testCase.at("in");
+            const auto& expectedOut = testCase.at("out");
+            
+            auto actualOut = simulate(net, inVec);
+            
+            // Check if this test case passes
+            bool testPasses = true;
+            for (const auto& [key, expectedVal] : expectedOut) {
+                if (actualOut.find(key) == actualOut.end() || actualOut.at(key) != expectedVal) {
+                    testPasses = false;
+                    break;
+                }
+            }
+            
+            if (testPasses) passed++;
+            else failed++;
+            
+            // Build row
+            std::vector<std::string> row;
+            row.push_back(std::to_string(testNum));
+            row.push_back(testPasses ? "✓ PASS" : "✗ FAIL");
+            
+            // Input values
+            for (const auto& in : level_.inputs) {
+                row.push_back(std::to_string(inVec.at(in)));
+            }
+            
+            // Output values (expected and actual)
+            for (const auto& out : level_.outputs) {
+                int expVal = expectedOut.at(out);
+                int actVal = (actualOut.find(out) != actualOut.end()) ? actualOut.at(out) : -1;
+                row.push_back(std::to_string(expVal));
+                if (expVal == actVal) {
+                    row.push_back(std::to_string(actVal));
+                } else {
+                    row.push_back(std::to_string(actVal) + " ←");
+                }
+            }
+            
+            table.addRow(row);
+            testNum++;
+        }
+        
+        tableMsg << table.render();
+        tableMsg << "\nSummary: " << passed << " passed, " << failed << " failed out of " << level_.expected.size() << " tests";
+        
+        tabs_.setError(tableMsg.str());
     } catch (const std::exception& e) {
         tabs_.setError("Error: " + std::string(e.what()));
     }
@@ -212,7 +404,8 @@ void LevelEditor::handleTabNavigation(KeyEvent key) {
 
 
 bool LevelEditor::run() {
-    TerminalUI::init();
+    // Terminal is already initialized in interactiveMode, don't re-init
+    // TerminalUI::init();
     
     tabs_.render();
     
@@ -222,7 +415,9 @@ bool LevelEditor::run() {
         if (key.key == Key::Escape) {
             // Auto-save solution before exiting
             game_.saveSolution(level_.id, solutionText_);
-            TerminalUI::cleanup();
+            // Clear screen and prepare for menu
+            TerminalUI::clearScreen();
+            TerminalUI::showCursor();
             return false;
         }
         
@@ -235,7 +430,7 @@ bool LevelEditor::run() {
         
         TabbedInterface::Tab activeTab = tabs_.getActiveTab();
         
-        if (key.key == Key::ShiftEnter) {
+        if (key.key == Key::ShiftEnter || key.key == Key::F5) {
             if (activeTab == TabbedInterface::Solution) {
                 compileAndTest();
             }
@@ -250,6 +445,9 @@ bool LevelEditor::run() {
             } else if (key.key == Key::Escape) {
                 // Auto-save solution before going back to menu
                 game_.saveSolution(level_.id, solutionText_);
+                // Clear screen and prepare for menu
+                TerminalUI::clearScreen();
+                TerminalUI::showCursor();
                 break;
             }
         } else {
@@ -257,12 +455,17 @@ bool LevelEditor::run() {
             if (key.key == Key::Escape) {
                 // Auto-save solution before going back to menu
                 game_.saveSolution(level_.id, solutionText_);
+                // Clear screen and prepare for menu
+                TerminalUI::clearScreen();
+                TerminalUI::showCursor();
                 break;
             }
         }
     }
     
-    TerminalUI::cleanup();
+    // Clear screen when exiting
+    TerminalUI::clearScreen();
+    TerminalUI::showCursor();
     return false;
 }
 

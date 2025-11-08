@@ -27,6 +27,8 @@ private:
     void addToHistory(const std::string& code);
     std::string getLastWorkedCode() const;
     void handleTabNavigation(KeyEvent key);
+    std::string generateTemplate() const;
+    void resetToTemplate();
 };
 
 #endif
