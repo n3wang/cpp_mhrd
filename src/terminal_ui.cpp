@@ -113,9 +113,61 @@ KeyEvent TerminalUI::readKey() {
                     if (modifier == '3') { // Alt
                         if (key == 'A') return {Key::AltUp, 0};
                         if (key == 'B') return {Key::AltDown, 0};
+                        // Alt+Backspace - try to detect via Alt+H or other patterns
+                        if (key == 'H' || key == '?') return {Key::AltBackspace, 0};
                     } else if (modifier == '5') { // Ctrl
                         if (key == 'C') return {Key::CtrlRight, 0};
                         if (key == 'D') return {Key::CtrlLeft, 0};
+                    }
+                    return {Key::None, 0};
+                }
+                
+                // Handle Shift+Delete: [3;2~ (Delete with Shift modifier)
+                // Handle Ctrl+Delete: [3;5~ (Delete with Ctrl modifier)
+                if (seq[1] == '3' && extra == ';') {
+                    char modifier;
+                    if (read(STDIN_FILENO, &modifier, 1) == 1) {
+                        char tilde;
+                        if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~') {
+                            if (modifier == '2') {
+                                return {Key::ShiftDelete, 0}; // Shift+Delete
+                            } else if (modifier == '5') {
+                                return {Key::CtrlDelete, 0}; // Ctrl+Delete (keep for compatibility)
+                            }
+                        }
+                    }
+                }
+                
+                // Handle Ctrl+Backspace: [27;5;127~ or [1;5H or other variations
+                // Try to detect [27;5;127~ pattern
+                if (seq[1] == '2' && extra == '7') {
+                    char more;
+                    if (read(STDIN_FILENO, &more, 1) == 1 && more == ';') {
+                        if (read(STDIN_FILENO, &more, 1) == 1 && more == '5') {
+                            if (read(STDIN_FILENO, &more, 1) == 1 && more == ';') {
+                                // Read the rest of the sequence
+                                std::string rest;
+                                char ch;
+                                while (read(STDIN_FILENO, &ch, 1) == 1) {
+                                    rest += ch;
+                                    if (ch == '~') break;
+                                    if (rest.length() > 10) break; // Safety limit
+                                }
+                                // Check if it ends with 127~ (Ctrl+Backspace)
+                                if (rest.find("127~") != std::string::npos || 
+                                    rest.find("8~") != std::string::npos) {
+                                    return {Key::CtrlBackspace, 0};
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Handle F4: [14~ (multi-digit function key)
+                if (seq[1] == '1' && extra == '4') {
+                    char tilde;
+                    if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~') {
+                        return {Key::F4, 0};
                     }
                     return {Key::None, 0};
                 }
@@ -125,6 +177,33 @@ KeyEvent TerminalUI::readKey() {
                     char tilde;
                     if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~') {
                         return {Key::F5, 0};
+                    }
+                    return {Key::None, 0};
+                }
+                
+                // Handle F6: [17~ (multi-digit function key)
+                if (seq[1] == '1' && extra == '7') {
+                    char tilde;
+                    if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~') {
+                        return {Key::F6, 0};
+                    }
+                    return {Key::None, 0};
+                }
+                
+                // Handle F12: [24~ or [24;2~ (multi-digit function key)
+                if (seq[1] == '2' && extra == '4') {
+                    char tilde;
+                    if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~') {
+                        return {Key::F12, 0};
+                    }
+                    // Check for Shift+F12: [24;2~
+                    if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == ';') {
+                        char modifier;
+                        if (read(STDIN_FILENO, &modifier, 1) == 1 && modifier == '2') {
+                            if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~') {
+                                return {Key::F12, 0};
+                            }
+                        }
                     }
                     return {Key::None, 0};
                 }
@@ -278,12 +357,8 @@ std::string Table::formatCell(const std::string& content, int width, int align) 
     int contentLen = static_cast<int>(content.length());
     int cellWidth = width; // Total cell width including padding
     
-    // Truncate if too long
+    // Don't truncate - show full content
     std::string displayContent = content;
-    if (contentLen > cellWidth - 2) {
-        displayContent = content.substr(0, cellWidth - 5) + "...";
-        contentLen = static_cast<int>(displayContent.length());
-    }
     
     if (align == 1) { // Right align
         int padding = cellWidth - contentLen - 2; // -2 for spaces on both sides
@@ -330,55 +405,60 @@ std::string Table::render() const {
         }
     }
     
-    // Top border
-    oss << "┌";
-    for (size_t i = 0; i < widths.size(); ++i) {
-        for (int j = 0; j < widths[i]; ++j) oss << "─";
-        if (i < widths.size() - 1) oss << "┬";
+    // Calculate total width for borders
+    int totalTableWidth = 1; // Left border
+    for (int w : widths) {
+        totalTableWidth += w;
     }
-    oss << "┐\n";
     
-    // Header row
+    // Top border (only left and top, no right, no separators)
+    oss << "┌";
+    for (int i = 0; i < totalTableWidth - 1; ++i) {
+        oss << "─";
+    }
+    oss << "\n";
+    
+    // Header row (only left border, no cell separators)
     oss << "│";
     for (size_t i = 0; i < headers_.size() && i < widths.size(); ++i) {
         int align = (i < columnAlignments_.size()) ? columnAlignments_[i] : -1;
         oss << formatCell(headers_[i], widths[i], align);
-        oss << "│";
+    }
+    // Fill missing columns if headers are shorter than widths
+    for (size_t i = headers_.size(); i < widths.size(); ++i) {
+        int align = (i < columnAlignments_.size()) ? columnAlignments_[i] : -1;
+        oss << formatCell("", widths[i], align);
     }
     oss << "\n";
     
-    // Header separator
+    // Header separator (only left, no right, no separators)
     oss << "├";
-    for (size_t i = 0; i < widths.size(); ++i) {
-        for (int j = 0; j < widths[i]; ++j) oss << "─";
-        if (i < widths.size() - 1) oss << "┼";
+    for (int i = 0; i < totalTableWidth - 1; ++i) {
+        oss << "─";
     }
-    oss << "┤\n";
+    oss << "\n";
     
-    // Data rows
+    // Data rows (only left border, no cell separators)
     for (const auto& row : rows_) {
         oss << "│";
         for (size_t i = 0; i < row.size() && i < widths.size(); ++i) {
             int align = (i < columnAlignments_.size()) ? columnAlignments_[i] : -1;
             oss << formatCell(row[i], widths[i], align);
-            oss << "│";
         }
         // Fill missing columns if row is shorter than headers
         for (size_t i = row.size(); i < widths.size(); ++i) {
             int align = (i < columnAlignments_.size()) ? columnAlignments_[i] : -1;
             oss << formatCell("", widths[i], align);
-            oss << "│";
         }
         oss << "\n";
     }
     
-    // Bottom border
-    oss << "└";
-    for (size_t i = 0; i < widths.size(); ++i) {
-        for (int j = 0; j < widths[i]; ++j) oss << "─";
-        if (i < widths.size() - 1) oss << "┴";
+    // Bottom border (only left and bottom, no right, no separators)
+    oss << "╚";
+    for (int i = 0; i < totalTableWidth - 1; ++i) {
+        oss << "─";
     }
-    oss << "┘\n";
+    oss << "\n";
     
     return oss.str();
 }
@@ -475,7 +555,7 @@ int Menu::show() {
 }
 
 // TabbedInterface implementation
-TabbedInterface::TabbedInterface() : activeTab_(Solution), cursorRow_(0), cursorCol_(0) {
+TabbedInterface::TabbedInterface() : activeTab_(Solution), cursorRow_(0), cursorCol_(0), showHelp_(false), showResetConfirmation_(false) {
     for (int i = 0; i < 4; ++i) scrollOffset_[i] = 0;
 }
 
@@ -606,14 +686,21 @@ void TabbedInterface::render() {
         TerminalUI::resetColor();
     }
     
-    // Status bar at bottom
+    // Status bar at bottom - simplified
     TerminalUI::moveCursor(statusBarRow, 1);
     TerminalUI::clearLine();
-    std::cout << "Tab/Shift+Tab: Switch tabs | F5: Compile | Enter: Newline | Esc: Back to menu";
-    if (activeTab_ == TabbedInterface::Solution) {
-        std::cout << " | Template provided";
-    }
+    std::cout << "F5: Compile | F6: Help | F12: Reset | Esc: Back to menu";
     std::cout.flush();
+    
+    // If help is visible, render modal overlay on top
+    if (showHelp_) {
+        renderHelp();
+    }
+    
+    // If reset confirmation is visible, render it on top
+    if (showResetConfirmation_) {
+        renderResetConfirmation();
+    }
     
     updateCursor();
 }
@@ -702,6 +789,247 @@ void TabbedInterface::renderHistory() {
     std::cout.flush();
 }
 
+void TabbedInterface::renderHelp() {
+    int height = TerminalUI::getHeight();
+    int width = TerminalUI::getWidth();
+    
+    // Calculate modal box dimensions and position (centered)
+    int boxWidth = 60;
+    int boxHeight = 25;
+    int startRow = (height - boxHeight) / 2;
+    int startCol = (width - boxWidth) / 2;
+    
+    // Draw top border (only top, left, bottom - no right)
+    TerminalUI::moveCursor(startRow, startCol);
+    TerminalUI::setColor(37, -1); // White
+    std::cout << "╔";
+    for (int i = 0; i < boxWidth - 1; ++i) {
+        std::cout << "═";
+    }
+    // No right corner on top
+    
+    // Title
+    TerminalUI::moveCursor(startRow + 1, startCol);
+    std::cout << "║                    Keyboard Shortcuts";
+    // Fill to end (no right border)
+    for (int i = 38; i < boxWidth; ++i) {
+        std::cout << " ";
+    }
+    
+    // Draw left border and content
+    int contentRow = startRow + 2;
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    for (int i = 1; i < boxWidth; ++i) std::cout << " ";
+    
+    // General shortcuts
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    TerminalUI::setColor(33, -1); // Yellow
+    std::cout << " General:";
+    TerminalUI::resetColor();
+    for (int i = 10; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Tab / Shift+Tab    Switch between tabs";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Esc                Exit to main menu";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  F6                 Toggle this help screen";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    for (int i = 1; i < boxWidth; ++i) std::cout << " ";
+    
+    // Editing shortcuts
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    TerminalUI::setColor(33, -1);
+    std::cout << " Editing (Solution tab):";
+    TerminalUI::resetColor();
+    for (int i = 26; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Arrow Keys         Move cursor";
+    for (int i = 36; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Enter              Insert newline";
+    for (int i = 36; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Backspace          Delete char before cursor";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Delete             Delete char after cursor";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Home / End         Move to start/end of line";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    for (int i = 1; i < boxWidth; ++i) std::cout << " ";
+    
+    // Word navigation
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    TerminalUI::setColor(33, -1);
+    std::cout << " Word Navigation:";
+    TerminalUI::resetColor();
+    for (int i = 18; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Ctrl + ←           Move to start of previous word";
+    for (int i = 46; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Ctrl + →           Move to start of next word";
+    for (int i = 44; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Alt+Backspace      Delete word to the left";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Shift+Delete       Delete word to the right";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    for (int i = 1; i < boxWidth; ++i) std::cout << " ";
+    
+    // Line manipulation
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    TerminalUI::setColor(33, -1);
+    std::cout << " Line Manipulation:";
+    TerminalUI::resetColor();
+    for (int i = 20; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Alt + ↑            Move current line up";
+    for (int i = 38; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  Alt + ↓            Move current line down";
+    for (int i = 40; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    for (int i = 1; i < boxWidth; ++i) std::cout << " ";
+    
+    // Compilation
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    TerminalUI::setColor(33, -1);
+    std::cout << " Compilation:";
+    TerminalUI::resetColor();
+    for (int i = 14; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  F5                 Compile and test solution";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    for (int i = 1; i < boxWidth; ++i) std::cout << " ";
+    
+    // Reset
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    TerminalUI::setColor(33, -1);
+    std::cout << " Reset:";
+    TerminalUI::resetColor();
+    for (int i = 8; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║  F12                Reset solution to template (confirm)";
+    for (int i = 50; i < boxWidth; ++i) std::cout << " ";
+    
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    for (int i = 1; i < boxWidth; ++i) std::cout << " ";
+    
+    // Footer
+    TerminalUI::moveCursor(contentRow++, startCol);
+    std::cout << "║";
+    TerminalUI::setColor(90, -1); // Dark gray
+    std::cout << " Press F6 again to close";
+    TerminalUI::resetColor();
+    for (int i = 26; i < boxWidth; ++i) std::cout << " ";
+    
+    // Draw bottom border (only left and bottom, no right)
+    TerminalUI::moveCursor(contentRow, startCol);
+    std::cout << "╚";
+    for (int i = 0; i < boxWidth - 1; ++i) {
+        std::cout << "═";
+    }
+    // No right corner on bottom
+    
+    TerminalUI::resetColor();
+    std::cout.flush();
+}
+
+void TabbedInterface::renderResetConfirmation() {
+    int height = TerminalUI::getHeight();
+    int width = TerminalUI::getWidth();
+    
+    // Calculate modal box dimensions and position (centered)
+    int boxWidth = 50;
+    int boxHeight = 5;
+    int startRow = (height - boxHeight) / 2;
+    int startCol = (width - boxWidth) / 2;
+    
+    // Draw top border (only left and top, no right)
+    TerminalUI::moveCursor(startRow, startCol);
+    TerminalUI::setColor(33, -1); // Yellow for warning
+    std::cout << "╔";
+    for (int i = 0; i < boxWidth - 1; ++i) {
+        std::cout << "═";
+    }
+    
+    // Title
+    TerminalUI::moveCursor(startRow + 1, startCol);
+    std::cout << "║";
+    TerminalUI::setColor(31, -1); // Red for warning
+    std::cout << "  WARNING: Reset solution to template?";
+    TerminalUI::resetColor();
+    for (int i = 38; i < boxWidth; ++i) std::cout << " ";
+    
+    // Message
+    TerminalUI::moveCursor(startRow + 2, startCol);
+    std::cout << "║";
+    std::cout << "  This will delete all your current work!";
+    for (int i = 42; i < boxWidth; ++i) std::cout << " ";
+    
+    // Confirmation prompt
+    TerminalUI::moveCursor(startRow + 3, startCol);
+    std::cout << "║";
+    TerminalUI::setColor(33, -1); // Yellow
+    std::cout << "  Type 'y' to confirm, 'n' to cancel:";
+    TerminalUI::resetColor();
+    for (int i = 38; i < boxWidth; ++i) std::cout << " ";
+    
+    // Bottom border (only left and bottom, no right)
+    TerminalUI::moveCursor(startRow + 4, startCol);
+    std::cout << "╚";
+    for (int i = 0; i < boxWidth - 1; ++i) {
+        std::cout << "═";
+    }
+    
+    TerminalUI::resetColor();
+    std::cout.flush();
+}
+
 void TabbedInterface::updateCursor() {
     if (activeTab_ == Solution) {
         // Calculate cursor position in solution text with line numbers
@@ -735,6 +1063,17 @@ void TabbedInterface::updateCursor() {
 }
 
 bool TabbedInterface::handleKey(KeyEvent key, std::string& solutionText) {
+    // Don't handle other keys when reset confirmation or help is showing
+    if (showResetConfirmation_ || showHelp_) {
+        return false; // Let LevelEditor handle it
+    }
+    
+    if (key.key == Key::F6) {
+        toggleHelp();
+        render();
+        return true;
+    }
+    
     if (key.key == Key::Tab) {
         // Cycle to next tab
         activeTab_ = static_cast<Tab>((static_cast<int>(activeTab_) + 1) % 4);
@@ -743,6 +1082,10 @@ bool TabbedInterface::handleKey(KeyEvent key, std::string& solutionText) {
     }
     
     if (key.key == Key::Escape) {
+        // Don't close help with Esc, only F4 toggles it
+        if (showHelp_) {
+            return true; // Consume Esc key when help is open
+        }
         return false; // Signal to go back
     }
     
@@ -768,6 +1111,160 @@ bool TabbedInterface::handleKey(KeyEvent key, std::string& solutionText) {
             if (cursorCol_ < static_cast<int>(solutionText.length())) {
                 solutionText.erase(solutionText.begin() + cursorCol_);
                 render();
+            }
+            return true;
+        } else if (key.key == Key::AltBackspace) {
+            // Delete word to the left (Alt+Backspace)
+            if (cursorCol_ > 0 && !solutionText.empty()) {
+                int start = cursorCol_;
+                // Move back to start of word
+                while (start > 0 && (solutionText[start - 1] == ' ' || solutionText[start - 1] == '\t')) {
+                    start--;
+                }
+                while (start > 0 && solutionText[start - 1] != ' ' && solutionText[start - 1] != '\t' && 
+                       solutionText[start - 1] != '\n') {
+                    start--;
+                }
+                solutionText.erase(solutionText.begin() + start, solutionText.begin() + cursorCol_);
+                cursorCol_ = start;
+                render();
+            }
+            return true;
+        } else if (key.key == Key::ShiftDelete || key.key == Key::CtrlDelete) {
+            // Delete word to the right (Shift+Delete or Ctrl+Delete)
+            if (cursorCol_ < static_cast<int>(solutionText.length())) {
+                int end = cursorCol_;
+                // Move forward to end of word
+                while (end < static_cast<int>(solutionText.length()) && 
+                       solutionText[end] != ' ' && solutionText[end] != '\t' && solutionText[end] != '\n') {
+                    end++;
+                }
+                while (end < static_cast<int>(solutionText.length()) && 
+                       (solutionText[end] == ' ' || solutionText[end] == '\t')) {
+                    end++;
+                }
+                solutionText.erase(solutionText.begin() + cursorCol_, solutionText.begin() + end);
+                render();
+            }
+            return true;
+        } else if (key.key == Key::CtrlLeft) {
+            // Move cursor to start of previous word
+            if (cursorCol_ > 0) {
+                // Move back through spaces
+                while (cursorCol_ > 0 && (solutionText[cursorCol_ - 1] == ' ' || solutionText[cursorCol_ - 1] == '\t')) {
+                    cursorCol_--;
+                }
+                // Move back through word
+                while (cursorCol_ > 0 && solutionText[cursorCol_ - 1] != ' ' && solutionText[cursorCol_ - 1] != '\t' && 
+                       solutionText[cursorCol_ - 1] != '\n') {
+                    cursorCol_--;
+                }
+                updateCursor();
+            }
+            return true;
+        } else if (key.key == Key::CtrlRight) {
+            // Move cursor to start of next word
+            if (cursorCol_ < static_cast<int>(solutionText.length())) {
+                // Move forward through current word
+                while (cursorCol_ < static_cast<int>(solutionText.length()) && 
+                       solutionText[cursorCol_] != ' ' && solutionText[cursorCol_] != '\t' && 
+                       solutionText[cursorCol_] != '\n') {
+                    cursorCol_++;
+                }
+                // Move forward through spaces
+                while (cursorCol_ < static_cast<int>(solutionText.length()) && 
+                       (solutionText[cursorCol_] == ' ' || solutionText[cursorCol_] == '\t')) {
+                    cursorCol_++;
+                }
+                updateCursor();
+            }
+            return true;
+        } else if (key.key == Key::AltUp) {
+            // Move current line up
+            if (cursorCol_ > 0) {
+                // Find start of current line
+                int lineStart = cursorCol_;
+                while (lineStart > 0 && solutionText[lineStart - 1] != '\n') {
+                    lineStart--;
+                }
+                // Find end of current line
+                int lineEnd = cursorCol_;
+                while (lineEnd < static_cast<int>(solutionText.length()) && solutionText[lineEnd] != '\n') {
+                    lineEnd++;
+                }
+                bool hasNewline = (lineEnd < static_cast<int>(solutionText.length()) && solutionText[lineEnd] == '\n');
+                if (hasNewline) lineEnd++;
+                
+                // Check if we can move up (not first line)
+                if (lineStart > 0) {
+                    // Find start of previous line
+                    int prevLineStart = lineStart - 1;
+                    while (prevLineStart > 0 && solutionText[prevLineStart - 1] != '\n') {
+                        prevLineStart--;
+                    }
+                    
+                    // Extract current line
+                    std::string currentLine = solutionText.substr(lineStart, lineEnd - lineStart);
+                    
+                    // Remove current line
+                    solutionText.erase(solutionText.begin() + lineStart, solutionText.begin() + lineEnd);
+                    
+                    // Insert before previous line
+                    solutionText.insert(solutionText.begin() + prevLineStart, currentLine.begin(), currentLine.end());
+                    
+                    // Update cursor position
+                    cursorCol_ = prevLineStart + (cursorCol_ - lineStart);
+                    render();
+                }
+            }
+            return true;
+        } else if (key.key == Key::AltDown) {
+            // Move current line down
+            if (cursorCol_ < static_cast<int>(solutionText.length())) {
+                // Find start of current line
+                int lineStart = cursorCol_;
+                while (lineStart > 0 && solutionText[lineStart - 1] != '\n') {
+                    lineStart--;
+                }
+                // Find end of current line
+                int lineEnd = cursorCol_;
+                while (lineEnd < static_cast<int>(solutionText.length()) && solutionText[lineEnd] != '\n') {
+                    lineEnd++;
+                }
+                bool hasNewline = (lineEnd < static_cast<int>(solutionText.length()) && solutionText[lineEnd] == '\n');
+                if (hasNewline) lineEnd++;
+                
+                // Check if we can move down (not last line)
+                if (lineEnd < static_cast<int>(solutionText.length())) {
+                    // Find start of next line
+                    int nextLineStart = lineEnd;
+                    // Find end of next line
+                    int nextLineEnd = nextLineStart;
+                    while (nextLineEnd < static_cast<int>(solutionText.length()) && solutionText[nextLineEnd] != '\n') {
+                        nextLineEnd++;
+                    }
+                    bool nextHasNewline = (nextLineEnd < static_cast<int>(solutionText.length()) && solutionText[nextLineEnd] == '\n');
+                    if (nextHasNewline) nextLineEnd++;
+                    
+                    // Extract current line
+                    std::string currentLine = solutionText.substr(lineStart, lineEnd - lineStart);
+                    
+                    // Extract next line
+                    std::string nextLine = solutionText.substr(nextLineStart, nextLineEnd - nextLineStart);
+                    
+                    // Remove both lines
+                    solutionText.erase(solutionText.begin() + lineStart, solutionText.begin() + nextLineEnd);
+                    
+                    // Insert next line first, then current line
+                    int insertPos = lineStart;
+                    solutionText.insert(solutionText.begin() + insertPos, nextLine.begin(), nextLine.end());
+                    insertPos += nextLine.length();
+                    solutionText.insert(solutionText.begin() + insertPos, currentLine.begin(), currentLine.end());
+                    
+                    // Update cursor position
+                    cursorCol_ = insertPos + (cursorCol_ - lineStart);
+                    render();
+                }
             }
             return true;
         } else if (key.key == Key::Up) {

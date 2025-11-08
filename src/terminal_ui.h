@@ -20,9 +20,14 @@ enum class Key {
     Delete,
     Home,
     End,
+    F4,
     F5,
+    F6,
+    F12,
     AltUp,
     AltDown,
+    AltBackspace,
+    ShiftDelete,
     CtrlLeft,
     CtrlRight,
     CtrlBackspace,
@@ -119,6 +124,10 @@ public:
     void clearError();
     void setSuccess(const std::string& message);
     void clearSuccess();
+    bool isHelpVisible() const { return showHelp_; }
+    void toggleHelp() { showHelp_ = !showHelp_; }
+    bool isResetConfirmationVisible() const { return showResetConfirmation_; }
+    void setResetConfirmation(bool show) { showResetConfirmation_ = show; }
     
 private:
     Tab activeTab_;
@@ -130,12 +139,16 @@ private:
     std::string success_;
     int cursorRow_, cursorCol_;
     int scrollOffset_[4]; // One per tab
+    bool showHelp_;
+    bool showResetConfirmation_;
     void renderTabs();
     void renderContent();
     void renderSolution();
     void renderInstructions();
     void renderStats();
     void renderHistory();
+    void renderHelp();
+    void renderResetConfirmation();
     void updateCursor();
 };
 

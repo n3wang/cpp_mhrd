@@ -271,6 +271,26 @@ void LevelEditor::compileAndTest() {
         return;
     }
     
+    // Helper function to find line number for a given string
+    auto findLineNumber = [&](const std::string& searchText) -> int {
+        std::istringstream iss(solutionText_);
+        std::string line;
+        int lineNum = 1;
+        while (std::getline(iss, line)) {
+            // Remove comments for matching
+            std::string lineWithoutComments = line;
+            size_t commentPos = lineWithoutComments.find("//");
+            if (commentPos != std::string::npos) {
+                lineWithoutComments = lineWithoutComments.substr(0, commentPos);
+            }
+            if (lineWithoutComments.find(searchText) != std::string::npos) {
+                return lineNum;
+            }
+            lineNum++;
+        }
+        return 0;
+    };
+    
     // Try to get more detailed error
     try {
         AST ast = parseHDL(solutionText_);
@@ -280,7 +300,12 @@ void LevelEditor::compileAndTest() {
         std::set<std::string> userInputs(ast.inputs.begin(), ast.inputs.end());
         std::set<std::string> expectedInputs(level_.inputs.begin(), level_.inputs.end());
         if (userInputs != expectedInputs) {
-            tabs_.setError("Input mismatch: Expected different inputs");
+            int lineNum = findLineNumber("Inputs:");
+            std::string errorMsg = "Input mismatch: Expected different inputs";
+            if (lineNum > 0) {
+                errorMsg += " (Line " + std::to_string(lineNum) + ")";
+            }
+            tabs_.setError(errorMsg);
             tabs_.render();
             return;
         }
@@ -289,7 +314,12 @@ void LevelEditor::compileAndTest() {
         std::set<std::string> userOutputs(ast.outputs.begin(), ast.outputs.end());
         std::set<std::string> expectedOutputs(level_.outputs.begin(), level_.outputs.end());
         if (userOutputs != expectedOutputs) {
-            tabs_.setError("Output mismatch: Expected different outputs");
+            int lineNum = findLineNumber("Outputs:");
+            std::string errorMsg = "Output mismatch: Expected different outputs";
+            if (lineNum > 0) {
+                errorMsg += " (Line " + std::to_string(lineNum) + ")";
+            }
+            tabs_.setError(errorMsg);
             tabs_.render();
             return;
         }
@@ -300,7 +330,19 @@ void LevelEditor::compileAndTest() {
             std::string kindLower = part.kind;
             std::transform(kindLower.begin(), kindLower.end(), kindLower.begin(), ::tolower);
             if (availableGates.find(kindLower) == availableGates.end()) {
-                tabs_.setError("Invalid gate used: " + part.kind + " (not available in this level)");
+                // Find the line with this gate
+                int lineNum = findLineNumber(part.name + ":" + part.kind);
+                if (lineNum == 0) {
+                    lineNum = findLineNumber(part.kind);
+                }
+                if (lineNum == 0) {
+                    lineNum = findLineNumber("Parts:");
+                }
+                std::string errorMsg = "Invalid gate used: " + part.kind + " (not available in this level)";
+                if (lineNum > 0) {
+                    errorMsg += " (Line " + std::to_string(lineNum) + ")";
+                }
+                tabs_.setError(errorMsg);
                 tabs_.render();
                 return;
             }
@@ -383,8 +425,88 @@ void LevelEditor::compileAndTest() {
         tableMsg << "\nSummary: " << passed << " passed, " << failed << " failed out of " << level_.expected.size() << " tests";
         
         tabs_.setError(tableMsg.str());
+    } catch (const std::runtime_error& e) {
+        // Try to extract line number from error message or find it
+        std::string errorMsg = e.what();
+        std::string fullError = "Error: " + errorMsg;
+        
+        // Try to find line number by searching for problematic content
+        std::istringstream iss(solutionText_);
+        std::string line;
+        int lineNum = 1;
+        bool foundLine = false;
+        
+        // Look for common error patterns and try to find the line
+        std::string searchPattern = "";
+        if (errorMsg.find("Bad part:") != std::string::npos) {
+            size_t start = errorMsg.find("Bad part:") + 9;
+            searchPattern = errorMsg.substr(start);
+            // Trim whitespace
+            while (!searchPattern.empty() && (searchPattern[0] == ' ' || searchPattern[0] == '\t')) {
+                searchPattern = searchPattern.substr(1);
+            }
+            // Extract just the part name (before any space or colon)
+            size_t end = searchPattern.find_first_of(" \t:");
+            if (end != std::string::npos) {
+                searchPattern = searchPattern.substr(0, end);
+            }
+        } else if (errorMsg.find("Bad wire:") != std::string::npos) {
+            size_t start = errorMsg.find("Bad wire:") + 9;
+            searchPattern = errorMsg.substr(start);
+            while (!searchPattern.empty() && (searchPattern[0] == ' ' || searchPattern[0] == '\t')) {
+                searchPattern = searchPattern.substr(1);
+            }
+        } else if (errorMsg.find("Unknown gate") != std::string::npos) {
+            size_t start = errorMsg.find("Unknown gate");
+            if (errorMsg.find("kind:") != std::string::npos) {
+                start = errorMsg.find("kind:") + 5;
+                searchPattern = errorMsg.substr(start);
+                while (!searchPattern.empty() && (searchPattern[0] == ' ' || searchPattern[0] == '\t')) {
+                    searchPattern = searchPattern.substr(1);
+                }
+            }
+        }
+        
+        // Search for the pattern in the source
+        if (!searchPattern.empty()) {
+            iss.clear();
+            iss.seekg(0);
+            lineNum = 1;
+            while (std::getline(iss, line)) {
+                std::string lineWithoutComments = line;
+                size_t commentPos = lineWithoutComments.find("//");
+                if (commentPos != std::string::npos) {
+                    lineWithoutComments = lineWithoutComments.substr(0, commentPos);
+                }
+                if (lineWithoutComments.find(searchPattern) != std::string::npos) {
+                    foundLine = true;
+                    break;
+                }
+                lineNum++;
+            }
+        }
+        
+        if (foundLine) {
+            fullError = "Error at Line " + std::to_string(lineNum) + ": " + errorMsg;
+        } else {
+            // Fallback: try to find section keywords
+            if (errorMsg.find("part") != std::string::npos || errorMsg.find("gate") != std::string::npos) {
+                int partsLine = findLineNumber("Parts:");
+                if (partsLine > 0) {
+                    fullError = "Error at Line " + std::to_string(partsLine) + ": " + errorMsg;
+                }
+            } else if (errorMsg.find("wire") != std::string::npos) {
+                int wiresLine = findLineNumber("Wires:");
+                if (wiresLine > 0) {
+                    fullError = "Error at Line " + std::to_string(wiresLine) + ": " + errorMsg;
+                }
+            }
+        }
+        
+        tabs_.setError(fullError);
     } catch (const std::exception& e) {
-        tabs_.setError("Error: " + std::string(e.what()));
+        std::string errorMsg = "Error: " + std::string(e.what());
+        tabs_.setError(errorMsg);
     }
     
     tabs_.render();
@@ -412,6 +534,31 @@ bool LevelEditor::run() {
     while (true) {
         KeyEvent key = TerminalUI::readKey();
         
+        // Handle reset confirmation first (before Escape check)
+        if (tabs_.isResetConfirmationVisible()) {
+            if (key.key == Key::Char) {
+                if (key.ch == 'y' || key.ch == 'Y') {
+                    // Reset to template
+                    solutionText_ = generateTemplate();
+                    tabs_.setSolutionText(solutionText_);
+                    tabs_.setResetConfirmation(false);
+                    tabs_.clearError();
+                    tabs_.setSuccess("Solution reset to template");
+                    game_.saveSolution(level_.id, solutionText_);
+                    tabs_.render();
+                } else if (key.ch == 'n' || key.ch == 'N') {
+                    // Cancel reset
+                    tabs_.setResetConfirmation(false);
+                    tabs_.render();
+                }
+            } else if (key.key == Key::Escape) {
+                // Cancel reset on Escape (don't exit IDE)
+                tabs_.setResetConfirmation(false);
+                tabs_.render();
+            }
+            continue;
+        }
+        
         if (key.key == Key::Escape) {
             // Auto-save solution before exiting
             game_.saveSolution(level_.id, solutionText_);
@@ -429,6 +576,18 @@ bool LevelEditor::run() {
         }
         
         TabbedInterface::Tab activeTab = tabs_.getActiveTab();
+        
+        if (key.key == Key::F6) {
+            tabs_.toggleHelp();
+            tabs_.render();
+            continue;
+        }
+        
+        if (key.key == Key::F12) {
+            tabs_.setResetConfirmation(true);
+            tabs_.render();
+            continue;
+        }
         
         if (key.key == Key::ShiftEnter || key.key == Key::F5) {
             if (activeTab == TabbedInterface::Solution) {
