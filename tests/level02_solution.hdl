@@ -1,0 +1,5 @@
+Inputs: a, b;
+Outputs: out;
+Parts: g1:and;
+Wires: a->g1.in1, b->g1.in2, g1.out->out;
+

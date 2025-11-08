@@ -1,0 +1,5 @@
+Inputs: a, b, c;
+Outputs: out;
+Parts: and1:and, and2:and, and3:and, or1:or, or2:or;
+Wires: a->and1.in1, b->and1.in2, a->and2.in1, c->and2.in2, b->and3.in1, c->and3.in2, and1.out->or1.in1, and2.out->or1.in2, or1.out->or2.in1, and3.out->or2.in2, or2.out->out;
+

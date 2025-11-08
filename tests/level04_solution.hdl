@@ -1,0 +1,5 @@
+Inputs: a, b;
+Outputs: sum, carry;
+Parts: xor1:xor, and1:and;
+Wires: a->xor1.in1, b->xor1.in2, xor1.out->sum, a->and1.in1, b->and1.in2, and1.out->carry;
+

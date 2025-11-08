@@ -1,0 +1,16 @@
+{
+  "id": "level02",
+  "name": "AND Gate",
+  "description": "Build an AND gate. The output should be 1 only when both inputs are 1.",
+  "difficulty": 1,
+  "available_gates": ["and"],
+  "inputs": ["a", "b"],
+  "outputs": ["out"],
+  "expected": [
+    {"in": {"a": 0, "b": 0}, "out": {"out": 0}},
+    {"in": {"a": 0, "b": 1}, "out": {"out": 0}},
+    {"in": {"a": 1, "b": 0}, "out": {"out": 0}},
+    {"in": {"a": 1, "b": 1}, "out": {"out": 1}}
+  ]
+}
+

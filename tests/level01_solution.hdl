@@ -1,0 +1,5 @@
+Inputs: in;
+Outputs: out;
+Parts: inv:not;
+Wires: in->inv.in, inv.out->out;
+

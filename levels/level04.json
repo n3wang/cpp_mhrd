@@ -1,0 +1,16 @@
+{
+  "id": "level04",
+  "name": "Half Adder",
+  "description": "Build a half adder. Output 'sum' is the XOR of inputs, and 'carry' is the AND of inputs.",
+  "difficulty": 3,
+  "available_gates": ["and", "or", "not", "xor"],
+  "inputs": ["a", "b"],
+  "outputs": ["sum", "carry"],
+  "expected": [
+    {"in": {"a": 0, "b": 0}, "out": {"sum": 0, "carry": 0}},
+    {"in": {"a": 0, "b": 1}, "out": {"sum": 1, "carry": 0}},
+    {"in": {"a": 1, "b": 0}, "out": {"sum": 1, "carry": 0}},
+    {"in": {"a": 1, "b": 1}, "out": {"sum": 0, "carry": 1}}
+  ]
+}
+

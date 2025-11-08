@@ -1,0 +1,14 @@
+Source: mhrd-cli
+Section: utils
+Priority: optional
+Maintainer: Your Name <you@example.com>
+Build-Depends: debhelper-compat (= 13), cmake, g++, make
+Standards-Version: 4.6.2
+Homepage: https://github.com/youruser/mhrd-cli
+
+Package: mhrd-cli
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Tiny terminal HDL puzzle simulator (MHRD-like)
+ Minimal CLI that parses a small HDL and prints a truth table.
+

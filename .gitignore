@@ -1,0 +1,24 @@
+# Build directories
+build/
+cmake-build-*/
+
+# Debian build artifacts
+*.deb
+*.dsc
+*.changes
+*.tar.gz
+*.tar.xz
+debian/files
+debian/.debhelper/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
