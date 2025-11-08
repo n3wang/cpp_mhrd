@@ -1,4 +1,4 @@
-# mhrd-cli
+# minlab
 
 A terminal-based HDL (Hardware Description Language) puzzle simulator inspired by MHRD. This minimal CLI tool parses a small HDL format and prints truth tables for combinational circuits.
 
@@ -24,7 +24,7 @@ Or using g++ directly:
 
 ```bash
 mkdir -p build
-g++ -std=c++17 -O2 -pipe -o build/mhrd-cli src/mhrd_cli.cpp
+g++ -std=c++17 -O2 -pipe -o build/minlab src/minlab.cpp
 ```
 
 ### Windows (Visual Studio/MSVC)
@@ -36,7 +36,7 @@ cmake ..
 cmake --build . --config Release
 ```
 
-The executable will be at `build\Release\mhrd-cli.exe`.
+The executable will be at `build\Release\minlab.exe`.
 
 Or using MinGW (if installed):
 
@@ -52,20 +52,20 @@ mingw32-make
 ### Linux/Unix
 
 ```bash
-./build/mhrd-cli examples/not.hdl
+./build/minlab examples/not.hdl
 ```
 
 ### Windows
 
 ```cmd
-build\Release\mhrd-cli.exe examples\not.hdl
+build\Release\minlab.exe examples\not.hdl
 ```
 
 Or from the build\Release directory:
 
 ```cmd
 cd build\Release
-mhrd-cli.exe ..\..\examples\not.hdl
+minlab.exe ..\..\examples\not.hdl
 ```
 
 Example output:
@@ -111,61 +111,51 @@ dpkg-buildpackage -us -uc
 
 This will create a `.deb` file in the parent directory:
 ```
-../mhrd-cli_0.1.0-1_*.deb
+../minlab_0.1.0-1_*.deb
 ```
 
 ### Installing the Package
 
 ```bash
-sudo dpkg -i ../mhrd-cli_0.1.0-1_*.deb
+sudo dpkg -i ../minlab_0.1.0-1_*.deb
 ```
 
 After installation, you can run:
 ```bash
-mhrd-cli /usr/share/mhrd-cli/examples/not.hdl
+minlab /usr/share/minlab/examples/not.hdl
 ```
 
 ## Publishing via PPA (Ubuntu)
 
-### 1. Create a PPA at Launchpad
+### Quick Start
 
-Visit https://launchpad.net/ and create a new PPA.
+See [PPA_QUICK_START.md](PPA_QUICK_START.md) for a condensed guide.
 
-### 2. Update Changelog for PPA
+### Detailed Instructions
 
-```bash
-dch -v 0.1.0-1ppa1 -D noble "PPA build"
-```
+See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive deployment instructions.
 
-### 3. Build Source Package
+### Quick Commands
 
 ```bash
-debuild -S -sa
-```
+# Build package
+./scripts/build-package.sh 1.0.0-1
 
-### 4. Upload to PPA
+# Upload to PPA
+./scripts/upload-ppa.sh YOUR_USERNAME/PPA_NAME 1.0.0-1~ppa1
 
-```bash
-sudo apt-get install -y dput
-dput ppa:YOURLPID/YOURPPA ../mhrd-cli_0.1.0-1ppa1_source.changes
-```
-
-Replace `YOURLPID` and `YOURPPA` with your Launchpad ID and PPA name.
-
-### 5. Users Install via apt
-
-```bash
-sudo add-apt-repository ppa:YOURLPID/YOURPPA
+# Users install
+sudo add-apt-repository ppa:YOUR_USERNAME/PPA_NAME
 sudo apt-get update
-sudo apt-get install mhrd-cli
+sudo apt-get install minlab
 ```
 
 ## Project Structure
 
 ```
-mhrd-cli/
+minlab/
 ├── src/
-│   └── mhrd_cli.cpp      # Main C++ source
+│   └── minlab.cpp      # Main C++ source
 ├── examples/
 │   └── not.hdl           # Example HDL file
 ├── debian/

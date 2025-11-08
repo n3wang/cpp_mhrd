@@ -1,10 +1,15 @@
 cmake_minimum_required(VERSION 3.10)
-project(mhrd-cli LANGUAGES CXX)
+project(minlab 
+    VERSION 1.0.0
+    DESCRIPTION "Interactive HDL puzzle game and circuit simulator"
+    LANGUAGES CXX
+)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_executable(mhrd-cli 
-    src/mhrd_cli.cpp
+add_executable(minlab 
+    src/minlab.cpp
     src/simulator.cpp
     src/game.cpp
     src/terminal_ui.cpp
@@ -32,6 +37,13 @@ add_executable(test-editor-integration
     src/syntax_checker.cpp
 )
 
-install(TARGETS mhrd-cli RUNTIME DESTINATION bin)
-install(FILES examples/not.hdl DESTINATION share/mhrd-cli/examples)
+install(TARGETS minlab RUNTIME DESTINATION bin)
+
+# Install examples
+install(FILES examples/not.hdl DESTINATION share/minlab/examples)
+
+# Install levels directory
+install(DIRECTORY levels/ DESTINATION share/minlab/levels
+    FILES_MATCHING PATTERN "*.json"
+)
 

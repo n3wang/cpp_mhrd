@@ -1,2 +1,3 @@
-# extra non-binary files installed by CMake already, so nothing required here
+# Files installed by CMake install() commands in CMakeLists.txt
+# Additional files can be listed here if needed
 

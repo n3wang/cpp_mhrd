@@ -7,20 +7,20 @@ An interactive puzzle game where you build digital circuits using HDL (Hardware 
 Run the game without arguments to enter interactive mode:
 
 ```bash
-./build/mhrd-cli
+./build/minlab
 ```
 
 Or use the legacy mode to test a single HDL file:
 
 ```bash
-./build/mhrd-cli examples/not.hdl
+./build/minlab examples/not.hdl
 ```
 
 ## Game Features
 
 ### Interactive Mode
 
-When you run `mhrd-cli` without arguments, you'll see a menu with all available levels:
+When you run `minlab` without arguments, you'll see a menu with all available levels:
 
 ```
 ╔══════════════════════════════════════════════════════════╗
@@ -53,7 +53,7 @@ Each level provides:
 
 ### Progress Tracking
 
-Your progress is automatically saved to `.mhrd_progress.json` in the project root. Completed levels are marked with a ✓ in the menu.
+Your progress is automatically saved to `.minlab_progress.json` in the project root. Completed levels are marked with a ✓ in the menu.
 
 ## Levels
 

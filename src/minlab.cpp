@@ -50,7 +50,7 @@ static void interactiveMode() {
     
     // Determine paths - try multiple locations
     std::string levelsDir = "levels";
-    std::string progressFile = ".mhrd_progress.json";
+    std::string progressFile = ".minlab_progress.json";
     
     // Try to find levels directory relative to executable
     try {
@@ -60,7 +60,7 @@ static void interactiveMode() {
             std::string candidateLevels = (projectRoot / "levels").string();
             if (fs::exists(candidateLevels)) {
                 levelsDir = candidateLevels;
-                progressFile = (projectRoot / ".mhrd_progress.json").string();
+                progressFile = (projectRoot / ".minlab_progress.json").string();
             }
         }
     } catch (...) {
@@ -87,7 +87,7 @@ static void interactiveMode() {
         TerminalUI::clearScreen();
         
         Menu menu("╔══════════════════════════════════════════════════════════╗\n"
-                  "║              MHRD CLI - Level Selector                   ║\n"
+                  "║              minlab - Level Selector                     ║\n"
                   "╚══════════════════════════════════════════════════════════╝");
         
         const auto& levels = game.getLevels();

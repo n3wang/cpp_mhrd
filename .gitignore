@@ -1,24 +1,43 @@
 # Build directories
 build/
-cmake-build-*/
+*.o
+*.a
+*.so
+*.dylib
 
-# Debian build artifacts
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Debian packaging
+../minlab_*.*.*/
+../minlab_*.{deb,dsc,changes,build,upload}
 *.deb
 *.dsc
 *.changes
-*.tar.gz
-*.tar.xz
-debian/files
-debian/.debhelper/
+*.build
+*.upload
+*.tar.{gz,xz,bz2}
 
 # Editor files
-.vscode/
-.idea/
 *.swp
 *.swo
 *~
+.vscode/
+.idea/
+*.code-workspace
 
 # OS files
 .DS_Store
 Thumbs.db
 
+# Game progress
+.minlab_progress.json
+
+# Test executables
+test-ui-controls
+test-editor-integration

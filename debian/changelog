@@ -1,6 +1,21 @@
-mhrd-cli (0.1.0-1) unstable; urgency=medium
+minlab (1.0.0-1) unstable; urgency=medium
 
-  * Initial release.
+  * Initial release
+  * Interactive game mode with level editor
+  * Terminal UI with tabbed interface (Solution, Instructions, Stats, History)
+  * Comprehensive keyboard shortcuts:
+    - Tab: Switch between tabs
+    - F5: Compile and test solution
+    - F6: Toggle help screen
+    - F12: Reset solution to template (with confirmation)
+    - Alt+Up/Down: Move lines
+    - Alt+Backspace/Shift+Delete: Delete words
+    - Ctrl+Left/Right: Word navigation
+  * Real-time syntax checking with line number reporting
+  * Circuit simulation with truth table validation
+  * Progress tracking and solution history
+  * Auto-save functionality
+  * Template generation for each level
 
- -- Your Name <you@example.com>  Wed, 06 Nov 2025 12:00:00 +0000
+ -- Your Name <you@example.com>  Mon, 08 Jan 2025 12:00:00 +0000
 

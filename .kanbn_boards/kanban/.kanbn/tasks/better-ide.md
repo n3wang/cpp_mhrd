@@ -1,9 +1,10 @@
 ---
 created: 2025-11-08T01:34:43.433Z
-updated: 2025-11-08T01:52:13.512Z
+updated: 2025-11-08T02:32:41.305Z
 assigned: ""
 progress: 0
 tags: []
+started: 2025-11-08T02:32:41.305Z
 ---
 
 # Better IDE

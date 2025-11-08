@@ -1,14 +1,34 @@
-Source: mhrd-cli
-Section: utils
+Source: minlab
+Section: games
 Priority: optional
 Maintainer: Your Name <you@example.com>
-Build-Depends: debhelper-compat (= 13), cmake, g++, make
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.10),
+               g++ (>= 7) | c++-compiler,
+               make,
+               pkg-config
 Standards-Version: 4.6.2
-Homepage: https://github.com/youruser/mhrd-cli
+Homepage: https://github.com/youruser/minlab
+Vcs-Browser: https://github.com/youruser/minlab
+Vcs-Git: https://github.com/youruser/minlab.git
+Rules-Requires-Root: no
 
-Package: mhrd-cli
+Package: minlab
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: Tiny terminal HDL puzzle simulator (MHRD-like)
- Minimal CLI that parses a small HDL and prints a truth table.
+Description: Interactive HDL puzzle game and circuit simulator
+ minlab is a terminal-based puzzle game inspired by MHRD where you build
+ digital circuits using HDL (Hardware Description Language).
+ .
+ Features:
+  * Interactive level-based gameplay with progressive difficulty
+  * Terminal UI with tabbed interface (Solution, Instructions, Stats, History)
+  * Comprehensive keyboard shortcuts for efficient editing
+  * Real-time syntax checking and error reporting
+  * Circuit simulation with truth table validation
+  * Progress tracking and solution history
+ .
+ The game includes multiple levels teaching digital circuit design through
+ hands-on HDL programming. Players learn to build gates, combinational circuits,
+ and more complex digital logic.
 
