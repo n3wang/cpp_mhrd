@@ -134,6 +134,12 @@ extractExpected(const std::string& json) {
     return result;
 }
 
+Game::Game() {
+    // Load component library
+    std::string componentsDir = ComponentLibrary::getComponentsDirectory();
+    componentLibrary_.loadComponents(componentsDir);
+}
+
 bool Game::parseLevelJson(const std::string& jsonContent, Level& level) {
     level.id = extractJsonString(jsonContent, "id");
     level.name = extractJsonString(jsonContent, "name");
@@ -183,7 +189,7 @@ Level* Game::getLevel(const std::string& id) {
 bool Game::validateSolution(const Level& level, const std::string& hdlContent) {
     try {
         AST ast = parseHDL(hdlContent);
-        Net net = buildNet(ast);
+        Net net = buildNetWithComponents(ast, &componentLibrary_);
         
         // Check inputs match
         std::set<std::string> userInputs(ast.inputs.begin(), ast.inputs.end());

@@ -28,6 +28,7 @@ struct Net {
 
 AST parseHDL(const std::string& src);
 Net buildNet(const AST& ast);
+Net buildNetWithComponents(const AST& ast, class ComponentLibrary* componentLib);
 std::unordered_map<std::string, int> simulate(Net& net, const std::unordered_map<std::string, int>& inVec);
 std::vector<std::unordered_map<std::string, int>> allCombos(const std::vector<std::string>& names);
 

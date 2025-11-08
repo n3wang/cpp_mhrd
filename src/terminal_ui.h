@@ -75,6 +75,7 @@ public:
     void setSelected(int index);
     int getSelected() const { return selected_; }
     size_t getOptionCount() const { return options_.size(); }
+    const Option& getOption(int index) const { return options_[index]; }
     
 private:
     std::string title_;

@@ -2,6 +2,7 @@
 #include "game.h"
 #include "terminal_ui.h"
 #include "level_editor.h"
+#include "component_designer.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -100,6 +101,8 @@ static void interactiveMode() {
             menu.addOption(text, level.id);
         }
         
+        menu.addOption("Component Designer", "component_designer");
+        
         menu.setHighlight(37, -1); // White
         menu.setSelectedHighlight(30, 47); // Black on white
         
@@ -116,6 +119,14 @@ static void interactiveMode() {
             playLevel(game, levels[choice]);
             game.saveProgress(progressFile);
             // Ensure terminal is still in raw mode after returning from level editor
+            TerminalUI::init();
+        } else if (choice >= 0 && choice == static_cast<int>(levels.size())) {
+            // Component Designer option
+            ComponentDesigner designer(game.getComponentLibrary());
+            designer.run();
+            // Reload components in case new ones were created
+            std::string componentsDir = ComponentLibrary::getComponentsDirectory();
+            game.getComponentLibrary().loadComponents(componentsDir);
             TerminalUI::init();
         }
     }

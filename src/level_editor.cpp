@@ -50,6 +50,16 @@ void LevelEditor::updateInstructions() {
         if (i > 0) oss << ", ";
         oss << level_.available_gates[i];
     }
+    
+    // Add custom components
+    auto customComponents = game_.getComponentLibrary().getAllComponents();
+    if (!customComponents.empty()) {
+        oss << "\nCustom Components: ";
+        for (size_t i = 0; i < customComponents.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << customComponents[i].name;
+        }
+    }
     oss << "\n\n";
     
     oss << "Expected Truth Table:\n";
@@ -284,38 +294,49 @@ void LevelEditor::compileAndTest() {
     // Try to compile and build test table
     try {
         AST ast = parseHDL(solutionText_);
-        Net net = buildNet(ast);
+        Net net = buildNetWithComponents(ast, &game_.getComponentLibrary());
         
-        // Check inputs
-        std::set<std::string> userInputs(ast.inputs.begin(), ast.inputs.end());
-        std::set<std::string> expectedInputs(level_.inputs.begin(), level_.inputs.end());
-        if (userInputs != expectedInputs) {
-            int lineNum = findLineNumber("Inputs:");
-            std::string errorMsg = "Input mismatch: Expected different inputs";
-            if (lineNum > 0) {
-                errorMsg += " (Line " + std::to_string(lineNum) + ")";
+        // Check if this is component design mode (empty expected test cases)
+        bool isComponentMode = level_.expected.empty() && level_.id.find("component_") == 0;
+        
+        if (!isComponentMode) {
+            // Regular level mode - validate inputs and outputs
+            std::set<std::string> userInputs(ast.inputs.begin(), ast.inputs.end());
+            std::set<std::string> expectedInputs(level_.inputs.begin(), level_.inputs.end());
+            if (userInputs != expectedInputs) {
+                int lineNum = findLineNumber("Inputs:");
+                std::string errorMsg = "Input mismatch: Expected different inputs";
+                if (lineNum > 0) {
+                    errorMsg += " (Line " + std::to_string(lineNum) + ")";
+                }
+                tabs_.setError(errorMsg);
+                tabs_.render();
+                return;
             }
-            tabs_.setError(errorMsg);
-            tabs_.render();
-            return;
+            
+            // Check outputs
+            std::set<std::string> userOutputs(ast.outputs.begin(), ast.outputs.end());
+            std::set<std::string> expectedOutputs(level_.outputs.begin(), level_.outputs.end());
+            if (userOutputs != expectedOutputs) {
+                int lineNum = findLineNumber("Outputs:");
+                std::string errorMsg = "Output mismatch: Expected different outputs";
+                if (lineNum > 0) {
+                    errorMsg += " (Line " + std::to_string(lineNum) + ")";
+                }
+                tabs_.setError(errorMsg);
+                tabs_.render();
+                return;
+            }
         }
         
-        // Check outputs
-        std::set<std::string> userOutputs(ast.outputs.begin(), ast.outputs.end());
-        std::set<std::string> expectedOutputs(level_.outputs.begin(), level_.outputs.end());
-        if (userOutputs != expectedOutputs) {
-            int lineNum = findLineNumber("Outputs:");
-            std::string errorMsg = "Output mismatch: Expected different outputs";
-            if (lineNum > 0) {
-                errorMsg += " (Line " + std::to_string(lineNum) + ")";
-            }
-            tabs_.setError(errorMsg);
-            tabs_.render();
-            return;
-        }
-        
-        // Check gates
+        // Check gates - allow level's available gates and custom components
         std::set<std::string> availableGates(level_.available_gates.begin(), level_.available_gates.end());
+        // Add custom components to available gates
+        auto customComponents = game_.getComponentLibrary().getAllComponents();
+        for (const auto& comp : customComponents) {
+            availableGates.insert(comp.name);
+        }
+        
         for (const auto& part : ast.parts) {
             std::string kindLower = part.kind;
             std::transform(kindLower.begin(), kindLower.end(), kindLower.begin(), ::tolower);
@@ -328,7 +349,7 @@ void LevelEditor::compileAndTest() {
                 if (lineNum == 0) {
                     lineNum = findLineNumber("Parts:");
                 }
-                std::string errorMsg = "Invalid gate used: " + part.kind + " (not available in this level)";
+                std::string errorMsg = "Invalid gate/component used: " + part.kind + " (not available in this level)";
                 if (lineNum > 0) {
                     errorMsg += " (Line " + std::to_string(lineNum) + ")";
                 }
@@ -338,91 +359,142 @@ void LevelEditor::compileAndTest() {
             }
         }
         
-        // Build comparison table - ALWAYS show test results
+        // Build comparison table
         std::ostringstream tableMsg;
-        tableMsg << "Test Results Comparison:\n\n";
         
-        Table table;
-        table.setMaxWidth(TerminalUI::getWidth() - 4);
-        
-        // Build header
-        std::vector<std::string> headers = {"#", "Status"};
-        for (const auto& in : level_.inputs) headers.push_back("in." + in);
-        for (const auto& out : level_.outputs) {
-            headers.push_back("out." + out + " (exp)");
-            headers.push_back("out." + out + " (got)");
-        }
-        table.addHeader(headers);
-        
-        // Set column alignments: # and numeric columns right-aligned, Status center
-        table.setColumnAlignment(0, 1); // # right-aligned
-        table.setColumnAlignment(1, 0); // Status center-aligned
-        // Input and output columns right-aligned (numeric)
-        for (size_t i = 2; i < headers.size(); ++i) {
-            table.setColumnAlignment(static_cast<int>(i), 1); // Right-align numeric columns
-        }
-        
-        // Add test case rows
-        int testNum = 1;
-        int passed = 0;
-        int failed = 0;
-        
-        for (const auto& testCase : level_.expected) {
-            const auto& inVec = testCase.at("in");
-            const auto& expectedOut = testCase.at("out");
+        if (isComponentMode) {
+            // Component design mode - show truth table for all input combinations
+            tableMsg << "Component Truth Table:\n\n";
             
-            auto actualOut = simulate(net, inVec);
+            Table table;
+            table.setMaxWidth(TerminalUI::getWidth() - 4);
             
-            // Check if this test case passes
-            bool testPasses = true;
-            for (const auto& [key, expectedVal] : expectedOut) {
-                if (actualOut.find(key) == actualOut.end() || actualOut.at(key) != expectedVal) {
-                    testPasses = false;
-                    break;
+            // Build header - use actual inputs/outputs from AST
+            std::vector<std::string> headers = {"#"};
+            for (const auto& in : ast.inputs) headers.push_back("in." + in);
+            for (const auto& out : ast.outputs) headers.push_back("out." + out);
+            table.addHeader(headers);
+            
+            // Set column alignments: # and numeric columns right-aligned
+            table.setColumnAlignment(0, 1); // # right-aligned
+            for (size_t i = 1; i < headers.size(); ++i) {
+                table.setColumnAlignment(static_cast<int>(i), 1); // Right-align numeric columns
+            }
+            
+            // Generate all input combinations
+            auto allInputCombos = allCombos(ast.inputs);
+            int testNum = 1;
+            
+            for (const auto& inVec : allInputCombos) {
+                auto actualOut = simulate(net, inVec);
+                
+                // Build row
+                std::vector<std::string> row;
+                row.push_back(std::to_string(testNum));
+                
+                // Input values
+                for (const auto& in : ast.inputs) {
+                    row.push_back(std::to_string(inVec.at(in)));
                 }
-            }
-            
-            if (testPasses) passed++;
-            else failed++;
-            
-            // Build row
-            std::vector<std::string> row;
-            row.push_back(std::to_string(testNum));
-            row.push_back(testPasses ? "✓ PASS" : "✗ FAIL");
-            
-            // Input values
-            for (const auto& in : level_.inputs) {
-                row.push_back(std::to_string(inVec.at(in)));
-            }
-            
-            // Output values (expected and actual)
-            for (const auto& out : level_.outputs) {
-                int expVal = expectedOut.at(out);
-                int actVal = (actualOut.find(out) != actualOut.end()) ? actualOut.at(out) : -1;
-                row.push_back(std::to_string(expVal));
-                if (expVal == actVal) {
+                
+                // Output values
+                for (const auto& out : ast.outputs) {
+                    int actVal = (actualOut.find(out) != actualOut.end()) ? actualOut.at(out) : -1;
                     row.push_back(std::to_string(actVal));
-                } else {
-                    row.push_back(std::to_string(actVal) + " ←");
                 }
+                
+                table.addRow(row);
+                testNum++;
             }
             
-            table.addRow(row);
-            testNum++;
+            tableMsg << table.render();
+            tableMsg << "\nTotal: " << allInputCombos.size() << " test cases";
+        } else {
+            // Regular level mode - show test results comparison
+            tableMsg << "Test Results Comparison:\n\n";
+            
+            Table table;
+            table.setMaxWidth(TerminalUI::getWidth() - 4);
+            
+            // Build header
+            std::vector<std::string> headers = {"#", "Status"};
+            for (const auto& in : level_.inputs) headers.push_back("in." + in);
+            for (const auto& out : level_.outputs) {
+                headers.push_back("out." + out + " (exp)");
+                headers.push_back("out." + out + " (got)");
+            }
+            table.addHeader(headers);
+            
+            // Set column alignments: # and numeric columns right-aligned, Status center
+            table.setColumnAlignment(0, 1); // # right-aligned
+            table.setColumnAlignment(1, 0); // Status center-aligned
+            // Input and output columns right-aligned (numeric)
+            for (size_t i = 2; i < headers.size(); ++i) {
+                table.setColumnAlignment(static_cast<int>(i), 1); // Right-align numeric columns
+            }
+            
+            // Add test case rows
+            int testNum = 1;
+            int passed = 0;
+            int failed = 0;
+            
+            for (const auto& testCase : level_.expected) {
+                const auto& inVec = testCase.at("in");
+                const auto& expectedOut = testCase.at("out");
+                
+                auto actualOut = simulate(net, inVec);
+                
+                // Check if this test case passes
+                bool testPasses = true;
+                for (const auto& [key, expectedVal] : expectedOut) {
+                    if (actualOut.find(key) == actualOut.end() || actualOut.at(key) != expectedVal) {
+                        testPasses = false;
+                        break;
+                    }
+                }
+                
+                if (testPasses) passed++;
+                else failed++;
+                
+                // Build row
+                std::vector<std::string> row;
+                row.push_back(std::to_string(testNum));
+                row.push_back(testPasses ? "✓ PASS" : "✗ FAIL");
+                
+                // Input values
+                for (const auto& in : level_.inputs) {
+                    row.push_back(std::to_string(inVec.at(in)));
+                }
+                
+                // Output values (expected and actual)
+                for (const auto& out : level_.outputs) {
+                    int expVal = expectedOut.at(out);
+                    int actVal = (actualOut.find(out) != actualOut.end()) ? actualOut.at(out) : -1;
+                    row.push_back(std::to_string(expVal));
+                    if (expVal == actVal) {
+                        row.push_back(std::to_string(actVal));
+                    } else {
+                        row.push_back(std::to_string(actVal) + " ←");
+                    }
+                }
+                
+                table.addRow(row);
+                testNum++;
+            }
+            
+            tableMsg << table.render();
+            tableMsg << "\nSummary: " << passed << " passed, " << failed << " failed out of " << level_.expected.size() << " tests";
+            
+            // If all tests passed, add success message to the table output
+            if (failed == 0 && passed == static_cast<int>(level_.expected.size())) {
+                tableMsg << "\n\n✓ SUCCESS! Your solution is correct!";
+                game_.markCompleted(level_.id);
+                addToHistory(solutionText_);
+                updateStats();
+            }
         }
         
-        tableMsg << table.render();
-        tableMsg << "\nSummary: " << passed << " passed, " << failed << " failed out of " << level_.expected.size() << " tests";
-        
-        // If all tests passed, add success message to the table output
-        if (failed == 0 && passed == static_cast<int>(level_.expected.size())) {
-            tableMsg << "\n\n✓ SUCCESS! Your solution is correct!";
-            game_.markCompleted(level_.id);
-            addToHistory(solutionText_);
-            updateStats();
-        }
-        
-        // Always show the test table (with success message appended if all passed)
+        // Always show the test table
         tabs_.setError(tableMsg.str());
     } catch (const std::runtime_error& e) {
         // Try to extract line number from error message or find it

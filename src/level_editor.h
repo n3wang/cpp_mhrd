@@ -11,6 +11,8 @@ class LevelEditor {
 public:
     LevelEditor(Game& game, const Level& level);
     bool run(); // Returns true if level completed, false if cancelled
+    std::string getSolutionText() const { return solutionText_; }
+    void setSolutionText(const std::string& text) { solutionText_ = text; tabs_.setSolutionText(solutionText_); }
     
 private:
     Game& game_;

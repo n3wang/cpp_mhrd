@@ -15,6 +15,8 @@ add_executable(minlab
     src/terminal_ui.cpp
     src/level_editor.cpp
     src/syntax_checker.cpp
+    src/component_library.cpp
+    src/component_designer.cpp
 )
 
 # Test executable for UI controls
@@ -25,6 +27,7 @@ add_executable(test-ui-controls
     src/game.cpp
     src/simulator.cpp
     src/syntax_checker.cpp
+    src/component_library.cpp
 )
 
 # Integration test for editor
@@ -35,6 +38,7 @@ add_executable(test-editor-integration
     src/game.cpp
     src/simulator.cpp
     src/syntax_checker.cpp
+    src/component_library.cpp
 )
 
 install(TARGETS minlab RUNTIME DESTINATION bin)

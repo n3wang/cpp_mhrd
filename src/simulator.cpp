@@ -1,8 +1,10 @@
 #include "simulator.h"
+#include "component_library.h"
 #include <sstream>
 #include <regex>
 #include <stdexcept>
 #include <cctype>
+#include <algorithm>
 
 static inline std::string trim(const std::string& s) {
     size_t a = s.find_first_not_of(" \t\r\n");
@@ -117,13 +119,69 @@ static std::string resolveDst(const AST& ast, const std::unordered_map<std::stri
     throw std::runtime_error("Ambiguous/unknown dst: " + ep);
 }
 
+// Helper function to create a GateDef from a custom component
+static GateDef componentToGateDef(const Component* component) {
+    if (!component) {
+        throw std::runtime_error("Null component");
+    }
+    
+    GateDef g;
+    g.inPins = component->inputs;
+    g.outPins = component->outputs;
+    
+    // Create evaluation function that simulates the component
+    g.eval = [component](const std::unordered_map<std::string, int>& inputs) {
+        // Create input map for component simulation
+        std::unordered_map<std::string, int> componentInputs;
+        for (const auto& in : component->inputs) {
+            if (inputs.find(in) != inputs.end()) {
+                componentInputs[in] = inputs.at(in);
+            } else {
+                componentInputs[in] = 0;  // Default to 0 if not provided
+            }
+        }
+        
+        // Simulate the component
+        Net componentNet = component->net;  // Copy the net
+        auto outputs = simulate(componentNet, componentInputs);
+        
+        return outputs;
+    };
+    
+    return g;
+}
+
 Net buildNet(const AST& ast) {
+    return buildNetWithComponents(ast, nullptr);
+}
+
+Net buildNetWithComponents(const AST& ast, ComponentLibrary* componentLib) {
     Net net;
     net.ast = ast;
     for (auto& i : ast.inputs) net.val["inp:" + i] = 0;
     for (auto& o : ast.outputs) net.val["out:" + o] = 0;
     for (auto& p : ast.parts) {
-        auto g = gateOf(p.kind);
+        GateDef g;
+        std::string kindLower = p.kind;
+        std::transform(kindLower.begin(), kindLower.end(), kindLower.begin(), ::tolower);
+        
+        // Check if it's a built-in gate
+        try {
+            g = gateOf(p.kind);
+        } catch (const std::runtime_error&) {
+            // Not a built-in gate, check if it's a custom component
+            if (componentLib) {
+                const Component* component = componentLib->getComponent(kindLower);
+                if (component) {
+                    g = componentToGateDef(component);
+                } else {
+                    throw std::runtime_error("Unknown gate/component kind: " + p.kind);
+                }
+            } else {
+                throw std::runtime_error("Unknown gate kind: " + p.kind);
+            }
+        }
+        
         net.partDef[p.name] = g;
         for (auto& ip : g.inPins) net.val[pinKey(p.name, ip)] = 0;
         for (auto& op : g.outPins) net.val[pinKey(p.name, op)] = 0;
