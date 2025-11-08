@@ -261,16 +261,6 @@ void LevelEditor::compileAndTest() {
         return;
     }
     
-    // Validate solution
-    if (game_.validateSolution(level_, solutionText_)) {
-        tabs_.setSuccess("✓ SUCCESS! Your solution is correct!");
-        game_.markCompleted(level_.id);
-        addToHistory(solutionText_);
-        updateStats();
-        tabs_.render();
-        return;
-    }
-    
     // Helper function to find line number for a given string
     auto findLineNumber = [&](const std::string& searchText) -> int {
         std::istringstream iss(solutionText_);
@@ -291,7 +281,7 @@ void LevelEditor::compileAndTest() {
         return 0;
     };
     
-    // Try to get more detailed error
+    // Try to compile and build test table
     try {
         AST ast = parseHDL(solutionText_);
         Net net = buildNet(ast);
@@ -348,7 +338,7 @@ void LevelEditor::compileAndTest() {
             }
         }
         
-        // Build comparison table
+        // Build comparison table - ALWAYS show test results
         std::ostringstream tableMsg;
         tableMsg << "Test Results Comparison:\n\n";
         
@@ -424,6 +414,15 @@ void LevelEditor::compileAndTest() {
         tableMsg << table.render();
         tableMsg << "\nSummary: " << passed << " passed, " << failed << " failed out of " << level_.expected.size() << " tests";
         
+        // If all tests passed, add success message to the table output
+        if (failed == 0 && passed == static_cast<int>(level_.expected.size())) {
+            tableMsg << "\n\n✓ SUCCESS! Your solution is correct!";
+            game_.markCompleted(level_.id);
+            addToHistory(solutionText_);
+            updateStats();
+        }
+        
+        // Always show the test table (with success message appended if all passed)
         tabs_.setError(tableMsg.str());
     } catch (const std::runtime_error& e) {
         // Try to extract line number from error message or find it

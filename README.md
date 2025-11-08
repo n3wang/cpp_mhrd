@@ -27,63 +27,13 @@ mkdir -p build
 g++ -std=c++17 -O2 -pipe -o build/minlab src/minlab.cpp
 ```
 
-### Windows (Visual Studio/MSVC)
+Compiling and uploading
 
-```cmd
-mkdir build
-cd build
-cmake ..
-cmake --build . --config Release
-```
+cd /home/newang/git/cpp_mhrd
+sudo dpkg -i ../minlab_1.0.0-1_amd64.deb
+sudo apt-get install -f  # Fix any dependency issues if needed
+minlab  # Test it
 
-The executable will be at `build\Release\minlab.exe`.
-
-Or using MinGW (if installed):
-
-```bash
-mkdir -p build
-cd build
-cmake -G "MinGW Makefiles" ..
-mingw32-make
-```
-
-## Usage
-
-### Linux/Unix
-
-```bash
-./build/minlab examples/not.hdl
-```
-
-### Windows
-
-```cmd
-build\Release\minlab.exe examples\not.hdl
-```
-
-Or from the build\Release directory:
-
-```cmd
-cd build\Release
-minlab.exe ..\..\examples\not.hdl
-```
-
-Example output:
-```
-in {in:0} -> out {out:1}
-in {in:1} -> out {out:0}
-```
-
-## HDL Format
-
-The HDL format is simple and consists of four sections:
-
-```
-Inputs: in1, in2;
-Outputs: out;
-Parts: gate1:and, gate2:or;
-Wires: in1->gate1.in1, in2->gate1.in2, gate1.out->gate2.in1, gate2.out->out;
-```
 
 ### Supported Gates
 
@@ -168,12 +118,4 @@ minlab/
 ├── CMakeLists.txt        # CMake build configuration
 └── README.md             # This file
 ```
-
-## License
-
-[Add your license here]
-
-## Contributing
-
-[Add contribution guidelines here]
 

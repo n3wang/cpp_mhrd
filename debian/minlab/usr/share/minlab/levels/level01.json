@@ -1,0 +1,14 @@
+{
+  "id": "level01",
+  "name": "NOT Gate",
+  "description": "Build a NOT gate. The output should be the inverse of the input.",
+  "difficulty": 1,
+  "available_gates": ["not"],
+  "inputs": ["in"],
+  "outputs": ["out"],
+  "expected": [
+    {"in": {"in": 0}, "out": {"out": 1}},
+    {"in": {"in": 1}, "out": {"out": 0}}
+  ]
+}
+

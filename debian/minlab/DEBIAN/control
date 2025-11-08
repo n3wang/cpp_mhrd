@@ -1,0 +1,24 @@
+Package: minlab
+Version: 1.0.0-1
+Architecture: amd64
+Maintainer: Your Name <you@example.com>
+Installed-Size: 295
+Depends: libc6 (>= 2.34), libgcc-s1 (>= 3.3.1), libstdc++6 (>= 11)
+Section: games
+Priority: optional
+Homepage: https://github.com/youruser/minlab
+Description: Interactive HDL puzzle game and circuit simulator
+ minlab is a terminal-based puzzle game inspired by MHRD where you build
+ digital circuits using HDL (Hardware Description Language).
+ .
+ Features:
+  * Interactive level-based gameplay with progressive difficulty
+  * Terminal UI with tabbed interface (Solution, Instructions, Stats, History)
+  * Comprehensive keyboard shortcuts for efficient editing
+  * Real-time syntax checking and error reporting
+  * Circuit simulation with truth table validation
+  * Progress tracking and solution history
+ .
+ The game includes multiple levels teaching digital circuit design through
+ hands-on HDL programming. Players learn to build gates, combinational circuits,
+ and more complex digital logic.

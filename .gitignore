@@ -1,4 +1,4 @@
-# Build directories
+examples/ignoreme.md
 build/
 *.o
 *.a
@@ -22,6 +22,35 @@ Makefile
 *.build
 *.upload
 *.tar.{gz,xz,bz2}
+*.buildinfo
+*.ddeb
+
+# Debian build artifacts (but keep source files like rules, control, changelog)
+debian/files
+debian/.debhelper/
+debian/*.substvars
+debian/*.log
+debian/*.debhelper
+debian/*.lintian
+debian/*.postinst.debhelper
+debian/*.prerm.debhelper
+debian/*.postrm.debhelper
+debian/*.preinst.debhelper
+debian/*.shlibs
+debian/*.symbols
+debian/*.md5sums
+
+# Build directories
+obj-*/
+minlab-package/
+*.egg-info/
+dist/
+*.egg
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 
 # Editor files
 *.swp

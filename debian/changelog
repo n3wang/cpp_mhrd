@@ -1,3 +1,16 @@
+minlab (1.0.0-1) UNRELEASED; urgency=medium
+
+  * PPA upload
+  * PPA upload
+
+ -- DESKTOP-KLQB96D <newang@DESKTOP-KLQB96D.>  Fri, 07 Nov 2025 23:52:04 -0300
+
+minlab (1.0.0-1) unstable; urgency=medium
+
+  * Package build
+
+ -- DESKTOP-KLQB96D <newang@DESKTOP-KLQB96D.>  Fri, 07 Nov 2025 23:46:36 -0300
+
 minlab (1.0.0-1) unstable; urgency=medium
 
   * Initial release
